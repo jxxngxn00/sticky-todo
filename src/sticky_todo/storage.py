@@ -5,6 +5,8 @@
   계층을 표현한다. 규칙: 첫 항목은 0, 각 항목은 바로 앞 항목 indent + 1 이하.
 - 어떤 항목의 '하위 항목'은 바로 뒤에 이어지는, indent가 더 큰 항목들이다.
   이동·삭제·들여쓰기는 하위 항목까지 묶어서 처리하고, 완료 체크는 그 항목만 바꾼다.
+- 완료 항목을 '보관'하면 노트 목록에서 빠져 보관함(archive)으로 간다. 지워지지 않고
+  관리 창에서 다시 보거나 복원할 수 있다.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -24,7 +26,7 @@ from PySide6.QtCore import QObject, QTimer, Signal
 
 from .fileio import atomic_write_text
 
-CURRENT_VERSION = 1
+CURRENT_VERSION = 2  # v2: 보관함(archive) 추가
 SAVE_DEBOUNCE_MS = 300
 MAX_BACKUPS = 5
 BACKUP_INTERVAL_SEC = 600  # 같은 세션에서 백업은 최대 10분에 한 번
@@ -48,6 +50,7 @@ class Todo:
     completed_at: str | None = None
     order: int = 0
     indent: int = 0
+    archived_at: str | None = None  # 보관한 시각 (보관함에 있을 때만)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +61,7 @@ class Todo:
             "completed_at": self.completed_at,
             "order": self.order,
             "indent": self.indent,
+            "archived_at": self.archived_at,
         }
 
 
@@ -72,8 +76,13 @@ class UnsupportedVersionError(Exception):
     """앱보다 새 버전에서 저장한 파일. 덮어쓰면 데이터가 손실될 수 있어 거부한다."""
 
 
+def _v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
+    """v1 → v2: 보관함(archive) 목록 추가."""
+    return {**data, "version": 2, "archive": []}
+
+
 # from_version -> 다음 버전 dict로 변환하는 함수
-MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {}
+MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {1: _v1_to_v2}
 
 
 def migrate(data: dict[str, Any]) -> dict[str, Any]:
@@ -109,21 +118,8 @@ def _int_or(value: Any, default: int) -> int:
     return default
 
 
-def parse_todos(data: Any) -> list[Todo]:
-    """JSON 객체를 검증해서 Todo 리스트로. 전체 구조가 틀리면 DataError.
-
-    개별 항목의 사소한 문제(시간 형식 등)는 기본값으로 고치고,
-    text가 없는 항목은 건너뛴다.
-    """
-    if not isinstance(data, dict):
-        raise DataError("최상위가 객체가 아님")
-    data = migrate(data)
-    raw = data.get("todos")
-    if not isinstance(raw, list):
-        raise DataError("todos가 리스트가 아님")
-
-    todos: list[Todo] = []
-    seen: set[str] = set()
+def _parse_items(raw: list, seen: set[str], *, archived: bool) -> list[Todo]:
+    items: list[Todo] = []
     for i, item in enumerate(raw):
         if not isinstance(item, dict) or not isinstance(item.get("text"), str):
             continue
@@ -137,7 +133,8 @@ def parse_todos(data: Any) -> list[Todo]:
         done = item.get("done") is True
         created = item.get("created_at")
         completed = item.get("completed_at")
-        todos.append(
+        archived_at = item.get("archived_at")
+        items.append(
             Todo(
                 id=tid,
                 text=text,
@@ -145,13 +142,43 @@ def parse_todos(data: Any) -> list[Todo]:
                 created_at=created if _valid_iso(created) else now_iso(),
                 completed_at=completed if done and _valid_iso(completed) else None,
                 order=_int_or(item.get("order"), i),
-                indent=max(0, _int_or(item.get("indent"), 0)),
+                indent=0 if archived else max(0, _int_or(item.get("indent"), 0)),
+                archived_at=(archived_at if _valid_iso(archived_at) else now_iso())
+                if archived
+                else None,
             )
         )
+    return items
+
+
+def parse_document(data: Any) -> tuple[list[Todo], list[Todo]]:
+    """JSON 객체를 검증해서 (노트 목록, 보관함). 전체 구조가 틀리면 DataError.
+
+    개별 항목의 사소한 문제(시간 형식 등)는 기본값으로 고치고,
+    text가 없는 항목은 건너뛴다.
+    """
+    if not isinstance(data, dict):
+        raise DataError("최상위가 객체가 아님")
+    data = migrate(data)
+    raw = data.get("todos")
+    if not isinstance(raw, list):
+        raise DataError("todos가 리스트가 아님")
+    raw_archive = data.get("archive", [])
+    if not isinstance(raw_archive, list):
+        raise DataError("archive가 리스트가 아님")
+
+    seen: set[str] = set()
+    todos = _parse_items(raw, seen, archived=False)
     # 원래 리스트 위치를 2차 키로 써서 order가 같아도 순서가 안정적이게
     todos = [t for _, t in sorted(enumerate(todos), key=lambda p: (p[1].order, p[0]))]
     normalize(todos)
-    return todos
+    archive = _parse_items(raw_archive, seen, archived=True)
+    return todos, archive
+
+
+def parse_todos(data: Any) -> list[Todo]:
+    """노트 목록만 (테스트·호환용)."""
+    return parse_document(data)[0]
 
 
 def normalize(todos: list[Todo]) -> None:
@@ -163,22 +190,23 @@ def normalize(todos: list[Todo]) -> None:
         t.order = i
 
 
-def read_todos_file(path: Path) -> list[Todo]:
+def read_todos_file(path: Path) -> tuple[list[Todo], list[Todo]]:
     try:
         text = Path(path).read_text(encoding="utf-8-sig")
         data = json.loads(text)
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
         raise DataError(str(e)) from e
-    return parse_todos(data)
+    return parse_document(data)
 
 
 # ---------------------------------------------------------------- 검색·정렬
 
 
 class Status(StrEnum):
-    ALL = "all"
+    ALL = "all"  # 노트에 있는 전체 (보관함 제외)
     ACTIVE = "active"
     DONE = "done"
+    ARCHIVED = "archived"  # 보관함
 
 
 class SortKey(StrEnum):
@@ -217,9 +245,17 @@ class LoadResult:
 
 
 @dataclass
-class _DeleteBatch:
-    items: list[tuple[int, Todo]]  # (원래 위치, 항목)
-    indents: dict[str, int]  # 지우기 직전 모든 항목의 indent (되돌릴 때 계층 복원용)
+class _UndoBatch:
+    items: list[tuple[int, Todo]]  # 노트에서 빠진 (원래 위치, 항목)
+    indents: dict[str, int]  # 빼기 직전 모든 항목의 indent (되돌릴 때 계층 복원용)
+    archived: bool = False  # True면 지운 게 아니라 보관함으로 옮긴 것
+    archive_items: list[tuple[int, Todo]] = field(default_factory=list)  # 보관함에서 지운 것
+
+
+def _local_date(iso: str | None) -> date | None:
+    if not iso:
+        return None
+    return datetime.fromisoformat(iso).astimezone().date()
 
 
 class TodoStore(QObject):
@@ -240,7 +276,8 @@ class TodoStore(QObject):
         self.todos_file = Path(todos_file)
         self.backups_dir = Path(backups_dir)
         self._todos: list[Todo] = []
-        self._undo: list[_DeleteBatch] = []
+        self._archive: list[Todo] = []  # 보관한 순서대로
+        self._undo: list[_UndoBatch] = []
         self._dirty = False
         self._autosave = autosave
         self._backup_interval = backup_interval_sec
@@ -259,9 +296,16 @@ class TodoStore(QObject):
         """노트 순서대로 복사본을 돌려준다."""
         return [replace(t) for t in self._todos]
 
+    def archived(self) -> list[Todo]:
+        """보관함 (보관한 순서대로) 복사본."""
+        return [replace(t) for t in self._archive]
+
     def get(self, todo_id: str) -> Todo | None:
         i = self._find(todo_id)
-        return replace(self._todos[i]) if i is not None else None
+        if i is not None:
+            return replace(self._todos[i])
+        a = self._find_archived(todo_id)
+        return replace(self._archive[a]) if a is not None else None
 
     def counts(self) -> dict[Status, int]:
         done = sum(t.done for t in self._todos)
@@ -269,6 +313,7 @@ class TodoStore(QObject):
             Status.ALL: len(self._todos),
             Status.ACTIVE: len(self._todos) - done,
             Status.DONE: done,
+            Status.ARCHIVED: len(self._archive),
         }
 
     def query(
@@ -280,13 +325,14 @@ class TodoStore(QObject):
         status = Status(status)
         sort = SortKey(sort)
         needle = text.strip().casefold()
-        # 시간은 초 단위라 같은 초에 추가된 항목은 노트 순서(= 추가 순서)로 가른다
-        pos = {t.id: i for i, t in enumerate(self._todos)}
+        source = self._archive if status is Status.ARCHIVED else self._todos
+        # 시간은 초 단위라 같은 초에 추가된 항목은 목록 순서(= 추가 순서)로 가른다
+        pos = {t.id: i for i, t in enumerate(source)}
         result = [
             replace(t)
-            for t in self._todos
+            for t in source
             if (not needle or needle in t.text.casefold())
-            and (status is Status.ALL or t.done == (status is Status.DONE))
+            and (status in (Status.ALL, Status.ARCHIVED) or t.done == (status is Status.DONE))
         ]
         if sort is SortKey.CREATED_DESC:
             result.sort(key=lambda t: (_ts(t.created_at), pos[t.id]), reverse=True)
@@ -411,37 +457,81 @@ class TodoStore(QObject):
         self._commit()
 
     def delete(self, ids: Iterable[str]) -> int:
-        """하위 항목까지 같이 지운다. 되돌리기 가능. 지운 개수를 돌려준다."""
+        """하위 항목까지 같이 지운다. 보관함 항목이면 보관함에서 지운다.
+
+        되돌리기 가능. 지운 개수를 돌려준다.
+        """
         indices: set[int] = set()
+        archive_idx: set[int] = set()
         for tid in ids:
             i = self._find(tid)
             if i is not None:
                 indices.update(range(i, self._block_end(i)))
-        return self._remove_indices(indices)
+                continue
+            a = self._find_archived(tid)
+            if a is not None:
+                archive_idx.add(a)
+        return self._take(indices, archive_idx=archive_idx)
 
-    def clear_completed(self) -> int:
-        """완료 항목만 지운다. 하위 항목은 완료가 아니면 남기고 위로 당긴다."""
-        return self._remove_indices({i for i, t in enumerate(self._todos) if t.done})
+    def archive_completed(self, before: date | None = None) -> int:
+        """완료 항목을 보관함으로 옮긴다. 되돌리기 가능.
+
+        before를 주면 그 날짜 전(어제까지)에 완료한 것만 옮긴다 (날짜 바뀔 때 자동 정리).
+        하위 항목은 완료가 아니면 노트에 남기고 위로 당긴다.
+        """
+        indices = {
+            i
+            for i, t in enumerate(self._todos)
+            if t.done and (before is None or (_local_date(t.completed_at) or before) < before)
+        }
+        return self._take(indices, to_archive=True)
+
+    def restore(self, ids: Iterable[str]) -> int:
+        """보관함 항목을 노트 맨 아래로 되돌린다."""
+        wanted = set(ids)
+        back = [t for t in self._archive if t.id in wanted]
+        if not back:
+            return 0
+        self._archive = [t for t in self._archive if t.id not in wanted]
+        for t in back:
+            t.archived_at = None
+            t.indent = 0
+        self._todos.extend(back)
+        self._commit()
+        return len(back)
 
     def can_undo(self) -> bool:
         return bool(self._undo)
 
     def undo_delete(self) -> int:
+        """마지막 삭제 또는 보관을 되돌린다."""
         if not self._undo:
             return 0
         batch = self._undo.pop()
+        if batch.archived:
+            moved = {t.id for _, t in batch.items}
+            self._archive = [t for t in self._archive if t.id not in moved]
         for pos, todo in sorted(batch.items, key=lambda p: p[0]):
+            todo.archived_at = None
             self._todos.insert(min(pos, len(self._todos)), todo)
         for t in self._todos:
             if t.id in batch.indents:
                 t.indent = batch.indents[t.id]
+        for pos, todo in sorted(batch.archive_items, key=lambda p: p[0]):
+            self._archive.insert(min(pos, len(self._archive)), todo)
         self._commit()
-        return len(batch.items)
+        return len(batch.items) + len(batch.archive_items)
 
     # ------------------------------------------------------------ 내부
 
     def _find(self, todo_id: str) -> int | None:
         for i, t in enumerate(self._todos):
+            if t.id == todo_id:
+                return i
+        return None
+
+    def _find_archived(self, todo_id: str) -> int | None:
+        for i, t in enumerate(self._archive):
             if t.id == todo_id:
                 return i
         return None
@@ -459,16 +549,27 @@ class TodoStore(QObject):
             j += 1
         return j
 
-    def _remove_indices(self, indices: set[int]) -> int:
-        if not indices:
+    def _take(
+        self, indices: set[int], *, to_archive: bool = False, archive_idx: set[int] | None = None
+    ) -> int:
+        """노트(indices)·보관함(archive_idx)에서 빼고 되돌리기 기록을 남긴다."""
+        archive_idx = archive_idx or set()
+        if not indices and not archive_idx:
             return 0
         removed = [(i, self._todos[i]) for i in sorted(indices)]
         indents = {t.id: t.indent for t in self._todos}
         self._todos = [t for i, t in enumerate(self._todos) if i not in indices]
-        self._undo.append(_DeleteBatch(removed, indents))
+        from_archive = [(i, self._archive[i]) for i in sorted(archive_idx)]
+        self._archive = [t for i, t in enumerate(self._archive) if i not in archive_idx]
+        if to_archive:
+            ts = now_iso()
+            for _, t in removed:
+                t.archived_at = ts
+                self._archive.append(t)
+        self._undo.append(_UndoBatch(removed, indents, to_archive, from_archive))
         del self._undo[:-MAX_UNDO]
         self._commit()
-        return len(removed)
+        return len(removed) + len(from_archive)
 
     def _commit(self) -> None:
         normalize(self._todos)
@@ -488,11 +589,11 @@ class TodoStore(QObject):
         self._undo.clear()
         self._dirty = False
         if not self.todos_file.exists():
-            self._todos = []
+            self._todos, self._archive = [], []
             self.changed.emit()
             return LoadResult(LoadStatus.NEW)
         try:
-            self._todos = read_todos_file(self.todos_file)
+            self._todos, self._archive = read_todos_file(self.todos_file)
             self.changed.emit()
             return LoadResult(LoadStatus.OK)
         except DataError as err:
@@ -504,10 +605,10 @@ class TodoStore(QObject):
         shutil.copy2(self.todos_file, corrupt)
         for backup in self.list_backups():
             try:
-                todos = read_todos_file(backup)
+                todos, archive = read_todos_file(backup)
             except DataError:
                 continue
-            self._todos = todos
+            self._todos, self._archive = todos, archive
             self._save(make_backup=False)
             self.changed.emit()
             return LoadResult(
@@ -516,7 +617,7 @@ class TodoStore(QObject):
                 backup_used=backup,
                 corrupt_copy=corrupt,
             )
-        self._todos = []
+        self._todos, self._archive = [], []
         self._save(make_backup=False)
         self.changed.emit()
         return LoadResult(
@@ -548,7 +649,11 @@ class TodoStore(QObject):
         if make_backup:
             self._maybe_backup()
         normalize(self._todos)
-        payload = {"version": CURRENT_VERSION, "todos": [t.to_dict() for t in self._todos]}
+        payload = {
+            "version": CURRENT_VERSION,
+            "todos": [t.to_dict() for t in self._todos],
+            "archive": [t.to_dict() for t in self._archive],
+        }
         atomic_write_text(self.todos_file, json.dumps(payload, ensure_ascii=False, indent=2))
         self._dirty = False
 

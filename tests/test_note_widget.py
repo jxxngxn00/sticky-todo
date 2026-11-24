@@ -171,12 +171,32 @@ def test_geometry_remembered(note):
     assert (s["window_w"], s["window_h"]) == (300, 400)
 
 
-def test_clear_completed_toast(note, store):
+def test_archive_completed_toast(note, store):
     a = store.add("A")
     store.set_done(a.id, True)
-    note.clear_completed()
+    note.archive_completed()
     assert len(store) == 0
-    assert "완료 1개" in note.toast_label.text()
+    assert [t.text for t in store.archived()] == ["A"]
+    assert "보관" in note.toast_label.text()
+    note.toast_undo.click()
+    assert [t.text for t in store.todos()] == ["A"]
+
+
+def test_auto_archive_on_new_day(note, store):
+    from datetime import date
+
+    a = store.add("어제 끝낸 일")
+    b = store.add("오늘 끝낸 일")
+    store.add("안 끝난 일")
+    store.set_done(a.id, True)
+    store.set_done(b.id, True)
+    store._todos[0].completed_at = "2026-11-23T18:00:00+09:00"
+    store._todos[1].completed_at = "2026-11-24T09:00:00+09:00"
+    assert note.auto_archive(today=date(2026, 11, 24)) == 1
+    assert [t.text for t in store.todos()] == ["오늘 끝낸 일", "안 끝난 일"]
+    assert "지난 날" in note.toast_label.text()
+    note.settings.set("auto_archive", False)
+    assert note.auto_archive(today=date(2026, 11, 25)) == 0
 
 
 def test_menu_builds(note):

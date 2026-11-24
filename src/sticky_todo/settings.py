@@ -96,6 +96,7 @@ SCHEMA: dict[str, Field] = {
     "check_style": Field("circle", _choice("square", "circle", "bullet")),
     "done_style": Field("strike", _choice("strike", "dim", "bottom", "hide")),
     "line_spacing": Field("normal", _choice("compact", "normal", "relaxed")),
+    "auto_archive": Field(True, _bool),  # 날짜가 바뀌면 지난 날 완료한 항목 보관
     # 노트 창
     "title": Field("오늘 할 일", _text(50), str.strip),
     "always_on_top": Field(False, _bool),
@@ -194,4 +195,4 @@ APPEARANCE_KEYS = [
     "shadow",
     "title_bar_mode",
 ]
-LIST_KEYS = ["check_style", "done_style", "line_spacing"]
+LIST_KEYS = ["check_style", "done_style", "line_spacing", "auto_archive"]

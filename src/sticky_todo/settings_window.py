@@ -235,6 +235,9 @@ class SettingsWindow(QDialog):
                 "line_spacing", [("compact", "촘촘"), ("normal", "보통"), ("relaxed", "여유")]
             ),
         )
+        self.auto_archive_check = QCheckBox("날짜가 바뀌면 지난 날 완료한 항목을 보관함으로")
+        self.auto_archive_check.toggled.connect(lambda on: self.change("auto_archive", on))
+        form.addRow("보관", self.auto_archive_check)
         return page
 
     # ------------------------------------------------------------ 값 ↔ 화면
@@ -261,6 +264,8 @@ class SettingsWindow(QDialog):
             self.font_combo.setCurrentFont(QFont(resolve_font_family(s["font_family"])))
         with QSignalBlocker(self.shadow_check):
             self.shadow_check.setChecked(s["shadow"])
+        with QSignalBlocker(self.auto_archive_check):
+            self.auto_archive_check.setChecked(s["auto_archive"])
         for key, cb in self.color_buttons.items():
             cb.set_color(s[key])
         self._sync_visibility()

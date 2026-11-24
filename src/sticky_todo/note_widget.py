@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QMimeData, QPoint, QRectF, QSize, Qt, QTimer, Signal
@@ -925,6 +926,13 @@ class NoteWidget(QWidget):
 
         self.apply_settings()
         self._restore_geometry()
+
+        # 날짜가 바뀌었는지 1분마다 확인해서 지난 날 완료한 항목을 보관
+        self._day_timer = QTimer(self)
+        self._day_timer.setInterval(60_000)
+        self._day_timer.timeout.connect(self.auto_archive)
+        self._day_timer.start()
+        QTimer.singleShot(0, self.auto_archive)
         self._restoring = False
 
     # ------------------------------------------------------------ 설정 반영
@@ -1142,8 +1150,8 @@ class NoteWidget(QWidget):
             a = colors.addAction(label, lambda k=key: self.apply_preset(k))
             a.setCheckable(True)
             a.setChecked(all(self.settings[f] == v.upper() for f, v in PRESETS[key].items()))
-        clear = menu.addAction("완료 항목 지우기", self.clear_completed)
-        clear.setEnabled(self.store.counts()["done"] > 0)
+        archive = menu.addAction("완료 항목 보관", self.archive_completed)
+        archive.setEnabled(self.store.counts()["done"] > 0)
         menu.addSeparator()
         menu.addAction("설정…", self.open_settings_window)
         auto = menu.addAction("시작 시 자동 실행")  # 5단계
@@ -1185,10 +1193,19 @@ class NoteWidget(QWidget):
     def _forget_settings_window(self) -> None:
         self._settings_win = None
 
-    def clear_completed(self) -> None:
-        n = self.store.clear_completed()
+    def archive_completed(self) -> None:
+        n = self.store.archive_completed()
         if n:
-            self.show_toast(f"완료 {n}개 지움", undo=True)
+            self.show_toast(f"완료 {n}개 보관함으로", undo=True)
+
+    def auto_archive(self, today: date | None = None) -> int:
+        """설정이 켜져 있으면 어제까지 완료한 항목을 보관한다."""
+        if not self.settings["auto_archive"]:
+            return 0
+        n = self.store.archive_completed(before=today or date.today())
+        if n:
+            self.show_toast(f"지난 날 완료한 {n}개를 보관했어요", undo=True)
+        return n
 
     def markdown_text(self) -> str:
         return markdown_io.export_markdown(self.store.todos(), title=self.settings["title"])

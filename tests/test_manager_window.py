@@ -294,3 +294,22 @@ def test_accent_follows_settings(win, settings):
     settings.apply_preset("mint")
     win.apply_style()
     assert win.done_delegate.accent.name().upper() == settings["accent_color"]
+
+
+def test_archived_filter_restore_and_readonly(win, store):
+    ids = fill(store)
+    store.archive_completed()  # B 리뷰가 보관됨
+    assert "B 리뷰" not in texts(win)
+    assert win.status_buttons[Status.ARCHIVED].text() == "보관됨 1"
+    win.status_buttons[Status.ARCHIVED].click()
+    assert texts(win) == ["B 리뷰"]
+    idx = win.model.index(0, COL_TEXT)
+    assert not idx.flags() & Qt.ItemFlag.ItemIsEditable  # 보관함은 읽기 전용
+    rect = win.table.visualRect(win.model.index(0, COL_DONE))
+    QTest.mouseClick(win.table.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+    assert store.get(ids["B"]).done  # 체크도 안 바뀜
+    win.select_ids([ids["B"]])
+    assert win.done_btn.text() == "노트로 복원"
+    win.done_btn.click()
+    assert texts(win) == []
+    assert "B 리뷰" in [t.text for t in store.todos()]

@@ -70,7 +70,12 @@ SORT_OPTIONS = [
     (SortKey.COMPLETED_DESC, "최근 완료순"),
     (SortKey.ALPHA, "가나다순"),
 ]
-STATUS_OPTIONS = [(Status.ALL, "전체"), (Status.ACTIVE, "진행 중"), (Status.DONE, "완료")]
+STATUS_OPTIONS = [
+    (Status.ALL, "전체"),
+    (Status.ACTIVE, "진행 중"),
+    (Status.DONE, "완료"),
+    (Status.ARCHIVED, "보관됨"),
+]
 TOAST_MS = 5000
 _ROOT = QModelIndex()
 
@@ -132,11 +137,18 @@ class TodoTableModel(QAbstractTableModel):
             return HEADERS[section]
         return None
 
+    @property
+    def archived_view(self) -> bool:
+        return self.status is Status.ARCHIVED
+
     def flags(self, index: QModelIndex) -> Qt.ItemFlag:
         f = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable
-        if index.column() in (COL_SELECT, COL_DONE):
+        if index.column() == COL_SELECT:
             f |= Qt.ItemFlag.ItemIsUserCheckable
-        if index.column() == COL_TEXT:
+        # 보관함 항목은 읽기 전용 (복원한 뒤에 고친다)
+        if index.column() == COL_DONE and not self.archived_view:
+            f |= Qt.ItemFlag.ItemIsUserCheckable
+        if index.column() == COL_TEXT and not self.archived_view:
             f |= Qt.ItemFlag.ItemIsEditable
         return f
 
@@ -162,7 +174,10 @@ class TodoTableModel(QAbstractTableModel):
             return self.parents.get(t.id)
         if role == Qt.ItemDataRole.ToolTipRole and col == COL_TEXT:
             parent = self.parents.get(t.id)
-            return f"{t.text}\n상위 항목: {parent}" if parent else t.text
+            tip = f"{t.text}\n상위 항목: {parent}" if parent else t.text
+            if t.archived_at:
+                tip += f"\n보관: {format_time(t.archived_at)}"
+            return tip
         if role == Qt.ItemDataRole.ForegroundRole and col == COL_TEXT and t.done:
             return QColor(128, 128, 128)
         return None
@@ -259,6 +274,8 @@ class CheckDelegate(QStyledItemDelegate):
     def editorEvent(self, event, model, option, index) -> bool:  # noqa: N802
         if self.shape != "circle":
             return False  # 선택 칸은 표(TodoTable)가 직접 처리
+        if not index.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+            return True  # 보관함 항목은 체크 변경 불가
         t = event.type()
         if t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
             checked = index.data(Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
@@ -555,7 +572,10 @@ class ManagerWindow(QWidget):
         for b in (self.done_btn, self.export_btn, self.delete_btn):
             b.setEnabled(n > 0)
         all_done = n > 0 and all(t.done for t in todos)
-        self.done_btn.setText("완료 취소" if all_done else "완료 처리")
+        if self.model.archived_view:
+            self.done_btn.setText("노트로 복원")
+        else:
+            self.done_btn.setText("완료 취소" if all_done else "완료 처리")
 
     def select_ids(self, ids: list[str]) -> None:
         sel = QItemSelection()
@@ -569,6 +589,10 @@ class ManagerWindow(QWidget):
     def toggle_done_selected(self) -> None:
         todos = self._selected_todos()
         if not todos:
+            return
+        if self.model.archived_view:
+            n = self.store.restore([t.id for t in todos])
+            self.show_toast(f"{n}개를 노트로 복원했어요")
             return
         all_done = all(t.done for t in todos)
         self.store.set_done_many([t.id for t in todos], not all_done)

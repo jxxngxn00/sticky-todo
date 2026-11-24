@@ -153,10 +153,10 @@ def test_delete_multiple_overlapping(store):
     assert tree(store) == [("D", 0)]
 
 
-def test_clear_completed_keeps_children_and_undo_restores_depth(store):
+def test_archive_completed_keeps_children_and_undo_restores_depth(store):
     ids = build(store, [("A", 0), ("P", 1), ("C", 2), ("D", 1)])
     store.set_done(ids["P"], True)
-    assert store.clear_completed() == 1
+    assert store.archive_completed() == 1
     assert tree(store) == [("A", 0), ("C", 1), ("D", 1)]
     store.undo_delete()
     assert tree(store) == [("A", 0), ("P", 1), ("C", 2), ("D", 1)]
@@ -201,7 +201,7 @@ def test_query_filter_and_sort(store):
     assert texts(store.query(sort=SortKey.CREATED_ASC)) == ["다 PR", "나 pr 리뷰", "가 회의"]
     assert texts(store.query(sort=SortKey.COMPLETED_DESC)) == ["나 pr 리뷰", "가 회의", "다 PR"]
     assert texts(store.query(sort=SortKey.ALPHA)) == ["가 회의", "나 pr 리뷰", "다 PR"]
-    assert store.counts() == {Status.ALL: 3, Status.ACTIVE: 1, Status.DONE: 2}
+    assert store.counts() == {Status.ALL: 3, Status.ACTIVE: 1, Status.DONE: 2, Status.ARCHIVED: 0}
 
 
 # ---------------------------------------------------------------- 저장/로드
@@ -397,3 +397,78 @@ def test_sort_ties_use_add_order(store):
         t.created_at = "2026-11-24T09:00:00+09:00"  # 같은 초
     assert [t.text for t in store.query(sort=SortKey.CREATED_DESC)] == ["셋째", "둘째", "첫째"]
     assert [t.text for t in store.query(sort=SortKey.CREATED_ASC)] == ["첫째", "둘째", "셋째"]
+
+
+# ---------------------------------------------------------------- 보관함
+
+
+def test_archive_restore_and_query(store):
+    ids = build(store, [("A", 0), ("B", 0), ("C", 0)])
+    store.set_done_many([ids["A"], ids["C"]], True)
+    assert store.archive_completed() == 2
+    assert [t.text for t in store.todos()] == ["B"]
+    arch = store.archived()
+    assert [t.text for t in arch] == ["A", "C"]
+    assert all(t.archived_at and t.done for t in arch)
+    assert store.counts()[Status.ARCHIVED] == 2
+    assert [t.text for t in store.query(status=Status.ARCHIVED)] == ["A", "C"]
+    assert [t.text for t in store.query("c", status=Status.ARCHIVED)] == ["C"]
+    assert store.get(ids["A"]).archived_at  # 보관함에서도 찾음
+    assert store.restore([ids["C"]]) == 1
+    assert [t.text for t in store.todos()] == ["B", "C"]
+    assert store.get(ids["C"]).archived_at is None
+
+
+def test_archive_before_date_only_older(store):
+    from datetime import date
+
+    ids = build(store, [("어제", 0), ("오늘", 0), ("미완", 0)])
+    store.set_done_many([ids["어제"], ids["오늘"]], True)
+    store._todos[0].completed_at = "2026-11-23T23:59:00+09:00"
+    store._todos[1].completed_at = "2026-11-24T00:01:00+09:00"
+    assert store.archive_completed(before=date(2026, 11, 24)) == 1
+    assert [t.text for t in store.todos()] == ["오늘", "미완"]
+
+
+def test_delete_from_archive_and_undo(store):
+    ids = build(store, [("A", 0)])
+    store.set_done(ids["A"], True)
+    store.archive_completed()
+    assert store.delete([ids["A"]]) == 1
+    assert store.archived() == []
+    assert store.undo_delete() == 1
+    assert [t.text for t in store.archived()] == ["A"]
+
+
+def test_undo_archive_moves_back(store):
+    ids = build(store, [("P", 0), ("C", 1)])
+    store.set_done(ids["P"], True)
+    store.archive_completed()
+    assert tree(store) == [("C", 0)]
+    store.undo_delete()
+    assert tree(store) == [("P", 0), ("C", 1)]
+    assert store.archived() == []
+
+
+def test_archive_saved_and_reloaded(make_store):
+    s1 = make_store()
+    t = s1.add("보관할 일")
+    s1.set_done(t.id, True)
+    s1.archive_completed()
+    s1.add("남은 일")
+    s1.flush()
+    data = json.loads(s1.todos_file.read_text(encoding="utf-8"))
+    assert data["version"] == 2
+    assert [x["text"] for x in data["archive"]] == ["보관할 일"]
+    s2 = make_store()
+    s2.load()
+    assert [x.text for x in s2.todos()] == ["남은 일"]
+    assert [x.text for x in s2.archived()] == ["보관할 일"]
+
+
+def test_v1_file_migrates_to_v2(store):
+    v1 = {"version": 1, "todos": [{"id": "a", "text": "옛날 데이터", "indent": 0}]}
+    store.todos_file.write_text(json.dumps(v1), encoding="utf-8")
+    assert store.load().status is LoadStatus.OK
+    assert [t.text for t in store.todos()] == ["옛날 데이터"]
+    assert store.archived() == []
