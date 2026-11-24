@@ -65,3 +65,49 @@ def pixmap(name: str, color: str, size: int = 18, scale: float = 2.0) -> QPixmap
 
 def icon(name: str, color: str, size: int = 18) -> QIcon:
     return QIcon(pixmap(name, color.upper(), size))
+
+
+def app_pixmap(size: int = 256) -> QPixmap:
+    """앱 아이콘: 노란 메모지 + 동그라미 체크 + 줄 두 개."""
+    from PySide6.QtGui import QColor, QPainterPath, QPen
+
+    px = QPixmap(size, size)
+    px.fill(Qt.GlobalColor.transparent)
+    p = QPainter(px)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    s = size / 64  # 64 기준 좌표로 그린다
+    p.setPen(Qt.PenStyle.NoPen)
+    p.setBrush(QColor("#FFD60A"))
+    p.drawRoundedRect(QRectF(4 * s, 4 * s, 56 * s, 56 * s), 14 * s, 14 * s)
+    # 체크 동그라미
+    p.setBrush(QColor("#FF9F0A"))
+    p.drawEllipse(QRectF(12 * s, 14 * s, 16 * s, 16 * s))
+    check = QPainterPath()
+    check.moveTo(15.5 * s, 22.5 * s)
+    check.lineTo(19 * s, 26 * s)
+    check.lineTo(25 * s, 18.5 * s)
+    pen = QPen(QColor("#FFFFFF"), 2.6 * s)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
+    p.setBrush(Qt.BrushStyle.NoBrush)
+    p.drawPath(check)
+    # 할 일 줄
+    line = QPen(QColor("#3A3A3C"), 4 * s)
+    line.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(line)
+    p.drawLine(int(33 * s), int(22 * s), int(50 * s), int(22 * s))
+    gray = QPen(QColor("#8E8E93"), 4 * s)
+    gray.setCapStyle(Qt.PenCapStyle.RoundCap)
+    p.setPen(gray)
+    p.drawLine(int(14 * s), int(40 * s), int(50 * s), int(40 * s))
+    p.drawLine(int(14 * s), int(50 * s), int(38 * s), int(50 * s))
+    p.end()
+    return px
+
+
+def app_icon() -> QIcon:
+    icon = QIcon()
+    for size in (16, 20, 24, 32, 48, 64, 128, 256):
+        icon.addPixmap(app_pixmap(size))
+    return icon

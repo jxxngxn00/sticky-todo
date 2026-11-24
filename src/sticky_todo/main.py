@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 
 from PySide6.QtCore import QLockFile, QTimer, qInstallMessageHandler
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
+from . import icons
+from .autostart import Autostart
 from .note_widget import NoteWidget, resolve_font_family
 from .paths import resolve_paths
 from .settings import Settings
 from .storage import LoadStatus, TodoStore, UnsupportedVersionError
+from .tray import Tray
 
 _previous_handler = None
 
@@ -32,6 +36,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Sticky Todo")
     app.setQuitOnLastWindowClosed(False)
+    app.setWindowIcon(icons.app_icon())
 
     paths = resolve_paths()
     try:
@@ -44,7 +49,12 @@ def main() -> int:
     lock = QLockFile(str(paths.data_dir / "app.lock"))
     lock.setStaleLockTime(0)
     if not lock.tryLock(100):
-        QMessageBox.information(None, "Sticky Todo", "Sticky Todo가 이미 실행 중이에요.")
+        QMessageBox.information(
+            None,
+            "Sticky Todo",
+            "Sticky Todo가 이미 실행 중이에요.\n"
+            "노트가 안 보이면 작업표시줄 오른쪽 트레이 아이콘을 눌러 주세요.",
+        )
         return 0
 
     settings = Settings.load(paths.settings_file)
@@ -56,15 +66,27 @@ def main() -> int:
         QMessageBox.critical(None, "Sticky Todo", str(e))
         return 1
 
-    note = NoteWidget(store, settings, paths.settings_file)
+    autostart = Autostart()
+    with contextlib.suppress(OSError):
+        autostart.refresh()  # exe를 다른 폴더로 옮겼으면 자동 실행 경로도 고친다
+
+    note = NoteWidget(store, settings, paths.settings_file, autostart=autostart)
     app.aboutToQuit.connect(store.flush)
     app.aboutToQuit.connect(note.save_settings)
+
+    tray = None
+    if QSystemTrayIcon.isSystemTrayAvailable():
+        tray = Tray(note)
+        tray.show()
+        note.hide_to_tray = True  # ✕는 트레이로 숨기기
     note.show()
 
     if result.status in (LoadStatus.RECOVERED, LoadStatus.RESET):
         QTimer.singleShot(0, lambda: QMessageBox.warning(note, "Sticky Todo", result.message))
 
     code = app.exec()
+    if tray is not None:
+        tray.hide()
     lock.unlock()
     return code
 

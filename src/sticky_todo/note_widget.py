@@ -43,6 +43,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import icons, markdown_io
+from .autostart import Autostart
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
 from .storage import Todo, TodoStore, today_str
@@ -913,11 +914,22 @@ class TodoInput(QLineEdit):
 
 
 class NoteWidget(QWidget):
+    hidden_to_tray = Signal()
+
     def __init__(
-        self, store: TodoStore, settings: Settings, settings_path: Path, parent=None
+        self,
+        store: TodoStore,
+        settings: Settings,
+        settings_path: Path,
+        parent=None,
+        *,
+        autostart: Autostart | None = None,
     ) -> None:
         super().__init__(parent)
         self.store = store
+        self.autostart = autostart
+        self.hide_to_tray = False  # 트레이가 있으면 ✕는 숨기기
+        self._quitting = False
         self.settings = settings
         self.settings_path = Path(settings_path)
         self.setWindowTitle("Sticky Todo")
@@ -1296,11 +1308,13 @@ class NoteWidget(QWidget):
         archive.setEnabled(self.store.counts(self.store.current_day)["done"] > 0)
         menu.addSeparator()
         menu.addAction("설정…", self.open_settings_window)
-        auto = menu.addAction("시작 시 자동 실행")  # 5단계
+        auto = menu.addAction("시작 시 자동 실행")
         auto.setCheckable(True)
-        auto.setEnabled(False)
+        auto.setEnabled(self.autostart is not None)
+        auto.setChecked(self.autostart is not None and self.autostart.is_enabled())
+        auto.toggled.connect(self.set_autostart)
         menu.addSeparator()
-        menu.addAction("종료", self.close)
+        menu.addAction("종료", self.quit_app)
         return menu
 
     def open_settings_window(self) -> None:
@@ -1513,7 +1527,37 @@ class NoteWidget(QWidget):
         except OSError as e:
             self.show_toast(f"설정 저장 실패: {e}")
 
+    def set_autostart(self, on: bool) -> None:
+        if self.autostart is None:
+            return
+        try:
+            self.autostart.set_enabled(on)
+        except OSError as err:
+            self.show_toast(f"자동 실행 설정 실패: {err}")
+            return
+        self.show_toast("윈도우를 켜면 자동으로 실행돼요" if on else "자동 실행을 껐어요")
+
+    def toggle_visible(self) -> None:
+        if self.isVisible():
+            self.hide()
+        else:
+            self.show()
+            self.raise_()
+            self.activateWindow()
+
+    def quit_app(self) -> None:
+        self._quitting = True
+        self.close()
+
     def closeEvent(self, e) -> None:  # noqa: N802
+        if self.hide_to_tray and not self._quitting:
+            # ✕는 트레이로 숨기기. 저장은 미리 해둔다.
+            e.ignore()
+            self.save_settings()
+            self.store.flush()
+            self.hide()
+            self.hidden_to_tray.emit()
+            return
         if self._manager_win is not None:
             self._manager_win.close()  # 관리 창 위치도 저장되도록 먼저 닫는다
         self.save_settings()
