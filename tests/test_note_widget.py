@@ -423,3 +423,60 @@ def test_new_day_moves_today_page(note, store):
     store.set_day("2020-01-01")
     note.check_new_day()
     assert store.current_day == today_str()
+
+
+# ---------------------------------------------------------------- 할 일 우클릭 메뉴
+
+
+def _labels(menu):
+    return [a.text() for a in menu.actions() if a.text()]
+
+
+def test_row_menu_on_today(note, store):
+    a = store.add("A")
+    labels = _labels(note.build_row_menu(a.id))
+    assert labels == [
+        "수정",
+        "완료 처리",
+        "들여쓰기 (Tab)",
+        "내어쓰기 (Shift+Tab)",
+        "내일로 미루기",
+        "보관함으로",
+        "삭제",
+    ]
+
+
+def test_row_menu_postpone_moves_with_children(note, store):
+    from sticky_todo.note_widget import _shift_day
+
+    p = store.add("P")
+    store.add("C", 1)
+    store.add("Q")
+    note.move_todo(p.id, _shift_day(today_str(), 1))
+    assert [t.text for t in store.todos()] == ["Q"]
+    assert [t.text for t in store.todos(_shift_day(today_str(), 1))] == ["P", "C"]
+    assert note.toast_label.text() == "내일 페이지로 옮겼어요 (하위 1개 포함)"
+
+
+def test_row_menu_on_other_day_offers_today(note, store):
+    note.go_day(2)
+    t = store.add("모레 일")
+    labels = _labels(note.build_row_menu(t.id))
+    assert "다음 날로 미루기" in labels and "오늘로 옮기기" in labels
+    note.move_todo(t.id, today_str())
+    assert store.get(t.id).day == today_str()
+
+
+def test_row_menu_actions(note, store):
+    a = store.add("A")
+    store.add("B")
+    menu = note.build_row_menu(a.id)
+    {x.text(): x for x in menu.actions()}["완료 처리"].trigger()
+    assert store.get(a.id).done
+    b = store.todos()[1]
+    {x.text(): x for x in note.build_row_menu(b.id).actions()}["들여쓰기 (Tab)"].trigger()
+    assert store.get(b.id).indent == 1
+    note.archive_todo(a.id)
+    assert [t.text for t in store.archived()] == ["A", "B"]  # 하위 항목까지
+    note.toast_undo.click()
+    assert len(store.todos()) == 2

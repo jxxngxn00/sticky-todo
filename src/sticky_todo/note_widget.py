@@ -313,6 +313,7 @@ class TodoRow(QWidget):
     edited = Signal(str, str)
     delete_clicked = Signal(str)
     clicked = Signal(str)
+    menu_requested = Signal(str, QPoint)  # 우클릭 (id, 화면 좌표)
     drag_requested = Signal(str, QPoint)
     indent_requested = Signal(str, int)  # 편집 중 Tab / Shift+Tab
     edit_closed = Signal()  # Enter / Esc로 편집을 마침
@@ -472,6 +473,11 @@ class TodoRow(QWidget):
         self._press_pos = None
         super().mouseReleaseEvent(e)
 
+    def contextMenuEvent(self, e) -> None:  # noqa: N802
+        if not self._editing:
+            self.menu_requested.emit(self.todo.id, e.globalPos())
+        e.accept()
+
     def mouseDoubleClickEvent(self, e: QMouseEvent) -> None:  # noqa: N802
         if e.button() == Qt.MouseButton.LeftButton:
             self.begin_edit()
@@ -516,6 +522,7 @@ class TodoListView(QScrollArea):
 
     delete_done = Signal(int)
     undo_requested = Signal()
+    menu_requested = Signal(str, QPoint)
 
     def __init__(self, store: TodoStore, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -566,6 +573,7 @@ class TodoListView(QScrollArea):
             row.edited.connect(self._on_edited)
             row.delete_clicked.connect(self.request_delete)
             row.clicked.connect(self.select)
+            row.menu_requested.connect(self._on_row_menu)
             row.drag_requested.connect(self._start_drag)
             row.indent_requested.connect(self._on_editor_indent)
             row.edit_closed.connect(self.setFocus)  # 바로 방향키로 이동할 수 있게
@@ -581,6 +589,15 @@ class TodoListView(QScrollArea):
             self._pending_edit = None
             if row:
                 row.begin_edit()
+
+    def _on_row_menu(self, todo_id: str, pos: QPoint) -> None:
+        self.select(todo_id)
+        self.menu_requested.emit(todo_id, pos)
+
+    def begin_edit(self, todo_id: str) -> None:
+        row = self._row(todo_id)
+        if row:
+            row.begin_edit()
 
     def _row(self, todo_id: str | None) -> TodoRow | None:
         return next((r for r in self.rows if r.todo.id == todo_id), None)
@@ -962,6 +979,7 @@ class NoteWidget(QWidget):
 
         self.list_view = TodoListView(store, self.card)
         self.list_view.delete_done.connect(lambda n: self.show_toast(f"{n}개 삭제됨", undo=True))
+        self.list_view.menu_requested.connect(lambda tid, pos: self.build_row_menu(tid).exec(pos))
         card_lay.addWidget(self.list_view, 1)
 
         # 알림 (삭제 되돌리기 등)
@@ -1316,6 +1334,43 @@ class NoteWidget(QWidget):
 
     def _forget_settings_window(self) -> None:
         self._settings_win = None
+
+    # ------------------------------------------------------------ 할 일 우클릭 메뉴
+
+    def build_row_menu(self, todo_id: str) -> QMenu:
+        todo = self.store.get(todo_id)
+        menu = QMenu(self)
+        if todo is None:
+            return menu
+        today = today_str()
+        day = self.store.current_day
+        menu.addAction("수정", lambda: self.list_view.begin_edit(todo_id))
+        menu.addAction(
+            "완료 취소" if todo.done else "완료 처리",
+            lambda: self.store.set_done(todo_id, not todo.done),
+        )
+        menu.addAction("들여쓰기 (Tab)", lambda: self.store.indent(todo_id))
+        menu.addAction("내어쓰기 (Shift+Tab)", lambda: self.store.outdent(todo_id))
+        menu.addSeparator()
+        later = "내일로 미루기" if day == today else "다음 날로 미루기"
+        menu.addAction(later, lambda: self.move_todo(todo_id, _shift_day(day, 1)))
+        if day != today:
+            menu.addAction("오늘로 옮기기", lambda: self.move_todo(todo_id, today))
+        menu.addAction("보관함으로", lambda: self.archive_todo(todo_id))
+        menu.addSeparator()
+        menu.addAction("삭제", lambda: self.list_view.request_delete(todo_id))
+        return menu
+
+    def move_todo(self, todo_id: str, day: str) -> None:
+        n = self.store.move_to_day([todo_id], day)
+        if n:
+            extra = f" (하위 {n - 1}개 포함)" if n > 1 else ""
+            self.show_toast(f"{day_label(day, short=True)} 페이지로 옮겼어요{extra}")
+
+    def archive_todo(self, todo_id: str) -> None:
+        n = self.store.archive([todo_id])
+        if n:
+            self.show_toast(f"{n}개 보관함으로", undo=True)
 
     def archive_completed(self) -> None:
         n = self.store.archive_completed(day=self.store.current_day)
