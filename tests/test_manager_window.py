@@ -313,3 +313,29 @@ def test_archived_filter_restore_and_readonly(win, store):
     win.done_btn.click()
     assert texts(win) == []
     assert "B 리뷰" in [t.text for t in store.todos()]
+
+
+def menu_texts(menu):
+    return [a.text() for a in menu.actions() if a.text()]
+
+
+def test_context_menu_archive(win, store):
+    ids = fill(store)
+    win.select_ids([ids["A"]])
+    labels = menu_texts(win.build_context_menu())
+    assert "보관함으로 (1개)" in labels and "삭제" in labels and "내용 수정" in labels
+    win.archive_selected()
+    assert win.toast_label.text() == "2개 보관함으로 (하위 1개 포함)"
+    assert "A 기획" not in texts(win)
+    win.toast_undo.click()
+    assert "A 기획" in texts(win)
+
+
+def test_context_menu_in_archived_view(win, store):
+    ids = fill(store)
+    store.archive([ids["C"]])
+    win.status_buttons[Status.ARCHIVED].click()
+    win.select_ids([ids["C"]])
+    labels = menu_texts(win.build_context_menu())
+    assert labels[0] == "노트로 복원 (1개)" and "완전히 삭제" in labels
+    assert "보관함으로 (1개)" not in labels

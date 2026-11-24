@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QPushButton,
     QStyle,
@@ -387,6 +388,8 @@ class ManagerWindow(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(36)
         self.table.setFrameShape(QFrame.Shape.NoFrame)
         self.table.setWordWrap(False)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(COL_SELECT, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_DONE, QHeaderView.ResizeMode.Fixed)
@@ -407,7 +410,7 @@ class ManagerWindow(QWidget):
         self.toast = QFrame()
         self.toast.setObjectName("managerToast")
         t_lay = QHBoxLayout(self.toast)
-        t_lay.setContentsMargins(10, 4, 6, 4)
+        t_lay.setContentsMargins(14, 9, 12, 9)
         self.toast_label = QLabel()
         self.toast_undo = QToolButton()
         self.toast_undo.setText("되돌리기")
@@ -501,7 +504,7 @@ class ManagerWindow(QWidget):
             QPushButton#danger:enabled {{ color: #FF3B30; }}
             #segmented QPushButton {{ color: palette(text); font-weight: 400; }}
             #managerToast {{ background: rgba(28, 28, 30, 0.92); border-radius: 12px; }}
-            #managerToast QLabel {{ color: #FFFFFF; }}
+            #managerToast QLabel {{ color: #FFFFFF; font-size: 9pt; }}
             #managerToast QToolButton {{
                 color: {a}, 1.0); border: none; font-weight: 700; background: transparent;
             }}
@@ -596,6 +599,49 @@ class ManagerWindow(QWidget):
             return
         all_done = all(t.done for t in todos)
         self.store.set_done_many([t.id for t in todos], not all_done)
+
+    def archive_selected(self) -> None:
+        ids = self.selected_ids()
+        if not ids:
+            return
+        n = self.store.archive(ids)
+        extra = n - len(ids)
+        text = f"{n}개 보관함으로" + (f" (하위 {extra}개 포함)" if extra > 0 else "")
+        self.show_toast(text, undo=True)
+
+    def build_context_menu(self) -> QMenu:
+        """선택한 항목에 대한 메뉴 (우클릭)."""
+        menu = QMenu(self)
+        todos = self._selected_todos()
+        n = len(todos)
+        if self.model.archived_view:
+            menu.addAction(f"노트로 복원 ({n}개)", self.toggle_done_selected)
+            menu.addAction("마크다운으로 내보내기…", self.export_selected)
+            menu.addSeparator()
+            menu.addAction("완전히 삭제", self.delete_selected)
+            return menu
+        all_done = all(t.done for t in todos)
+        menu.addAction("완료 취소" if all_done else "완료 처리", self.toggle_done_selected)
+        if n == 1:
+            menu.addAction("내용 수정", self._edit_current)
+        menu.addAction(f"보관함으로 ({n}개)", self.archive_selected)
+        menu.addAction("마크다운으로 내보내기…", self.export_selected)
+        menu.addSeparator()
+        menu.addAction("삭제", self.delete_selected)
+        return menu
+
+    def _show_context_menu(self, pos: QPoint) -> None:
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+        # 선택 밖의 줄을 우클릭하면 그 줄만 선택
+        if not self._row_selected(index.row()):
+            self.select_ids([self.model.rows[index.row()].id])
+        self.table.setCurrentIndex(self.model.index(index.row(), COL_TEXT))
+        self.build_context_menu().exec(self.table.viewport().mapToGlobal(pos))
+
+    def _edit_current(self) -> None:
+        self.table.edit(self.model.index(self.table.currentIndex().row(), COL_TEXT))
 
     def delete_selected(self) -> None:
         ids = self.selected_ids()

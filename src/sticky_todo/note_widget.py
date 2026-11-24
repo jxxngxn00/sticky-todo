@@ -882,7 +882,7 @@ class NoteWidget(QWidget):
         self.toast = QFrame(self.card)
         self.toast.setObjectName("toast")
         t_lay = QHBoxLayout(self.toast)
-        t_lay.setContentsMargins(10, 4, 6, 4)
+        t_lay.setContentsMargins(14, 9, 12, 9)
         self.toast_label = QLabel(self.toast)
         self.toast_undo = QToolButton(self.toast)
         self.toast_undo.setObjectName("toastButton")
@@ -1024,9 +1024,10 @@ class NoteWidget(QWidget):
             #toast {{
                 background: rgba(28, 28, 30, 0.88); border-radius: 12px; margin: 0 8px 6px 8px;
             }}
-            #toast QLabel {{ color: #FFFFFF; }}
+            #toast QLabel {{ color: #FFFFFF; font-size: {max(size - 2, 9)}pt; }}
             #toastButton {{
                 border: none; background: transparent; color: {accent}; font-weight: 700;
+                font-size: {max(size - 2, 9)}pt;
             }}
             QScrollBar:vertical {{ background: transparent; width: 6px; margin: 4px 1px; }}
             QScrollBar::handle:vertical {{

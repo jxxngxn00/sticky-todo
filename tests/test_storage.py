@@ -472,3 +472,12 @@ def test_v1_file_migrates_to_v2(store):
     assert store.load().status is LoadStatus.OK
     assert [t.text for t in store.todos()] == ["옛날 데이터"]
     assert store.archived() == []
+
+
+def test_archive_selected_with_children_and_undo(store):
+    ids = build(store, [("P", 0), ("C", 1), ("Q", 0)])
+    assert store.archive([ids["P"]]) == 2  # 미완료여도, 하위까지
+    assert tree(store) == [("Q", 0)]
+    assert [t.text for t in store.archived()] == ["P", "C"]
+    store.undo_delete()
+    assert tree(store) == [("P", 0), ("C", 1), ("Q", 0)]

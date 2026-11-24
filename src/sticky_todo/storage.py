@@ -473,6 +473,15 @@ class TodoStore(QObject):
                 archive_idx.add(a)
         return self._take(indices, archive_idx=archive_idx)
 
+    def archive(self, ids: Iterable[str]) -> int:
+        """고른 항목을 하위 항목까지 묶어서 보관함으로 옮긴다 (완료 여부 무관). 되돌리기 가능."""
+        indices: set[int] = set()
+        for tid in ids:
+            i = self._find(tid)
+            if i is not None:
+                indices.update(range(i, self._block_end(i)))
+        return self._take(indices, to_archive=True)
+
     def archive_completed(self, before: date | None = None) -> int:
         """완료 항목을 보관함으로 옮긴다. 되돌리기 가능.
 
