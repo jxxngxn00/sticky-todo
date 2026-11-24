@@ -53,6 +53,7 @@ PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": 
 TOAST_MS = 5000
 SHADOW_PX = 10
 GLASS_FALLBACK_MIN_ALPHA = 0.75
+GLASS_MIN_ALPHA = 0.05
 
 
 def _rgba(color: str, alpha: float) -> str:
@@ -863,6 +864,9 @@ class NoteWidget(QWidget):
             if not self._glass_on:
                 # 블러가 없으면 너무 투명할 때 뒤 화면과 글자가 섞여 안 읽힌다
                 alpha = max(alpha, GLASS_FALLBACK_MIN_ALPHA)
+            else:
+                # 완전히 투명한 부분은 클릭이 뒤 창으로 통과해버린다 (레이어드 창 특성)
+                alpha = max(alpha, GLASS_MIN_ALPHA)
             text = contrast_text(tint)
             edge = 0.30 if text == "#FFFFFF" else 0.65
             return {
@@ -908,8 +912,7 @@ class NoteWidget(QWidget):
             return False
         hwnd = int(self.winId())
         if self.settings["style"] == "glass":
-            dark = contrast_text(self.settings["glass_tint"]) == "#FFFFFF"
-            self._glass_on = enable_glass(hwnd, dark=dark, corner=self.settings["glass_corner"])
+            self._glass_on = enable_glass(hwnd, corner=self.settings["glass_corner"])
         else:
             if was:
                 disable_glass(hwnd)

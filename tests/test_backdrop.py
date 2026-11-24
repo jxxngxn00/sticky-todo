@@ -6,7 +6,7 @@ from sticky_todo.settings import Settings, contrast_text, luminance
 
 
 @pytest.mark.parametrize(
-    ("build", "ok"), [(19045, False), (22000, False), (22621, True), (26300, True)]
+    ("build", "ok"), [(19045, False), (21999, False), (22000, True), (26300, True)]
 )
 def test_acrylic_supported(build, ok):
     assert backdrop.acrylic_supported(build) is ok
@@ -14,13 +14,13 @@ def test_acrylic_supported(build, ok):
 
 def test_enable_glass_unsupported_build(monkeypatch):
     monkeypatch.setattr(backdrop, "windows_build", lambda: 19045)
-    assert backdrop.enable_glass(12345, dark=False) is False
+    assert backdrop.enable_glass(12345) is False
 
 
 def test_enable_glass_bad_handle_never_raises():
-    assert backdrop.enable_glass(0, dark=True) is False
-    # 존재하지 않는 핸들: DWM이 오류 코드를 돌려줄 뿐 예외는 없어야 함
-    assert backdrop.enable_glass(0x7FFF0000, dark=True) is False
+    assert backdrop.enable_glass(0) is False
+    # 존재하지 않는 핸들: 윈도우가 실패를 돌려줄 뿐 예외는 없어야 함
+    assert backdrop.enable_glass(0x7FFF0000) is False
     backdrop.disable_glass(0x7FFF0000)
 
 
@@ -29,8 +29,9 @@ def test_enable_glass_dwm_raises(monkeypatch):
         raise OSError("dwmapi 없음")
 
     monkeypatch.setattr(backdrop, "acrylic_supported", lambda build=None: True)
+    monkeypatch.setattr(backdrop, "_user32", boom)
     monkeypatch.setattr(backdrop, "_dwm", boom)
-    assert backdrop.enable_glass(1, dark=False) is False
+    assert backdrop.enable_glass(1) is False
     backdrop.disable_glass(1)
 
 
@@ -84,6 +85,8 @@ def test_glass_palette_when_blur_on(glass_note):
     glass_note.settings.set("glass_transparency", 70)
     pal = glass_note.note_palette()
     assert pal["card"].endswith("0.300)")
+    glass_note.settings.set("glass_transparency", 100)
+    assert glass_note.note_palette()["card"].endswith("0.050)")  # 클릭 통과 방지 최소값
     assert "rgba(255, 255, 255" in pal["border"]  # 가장자리 하이라이트
 
 

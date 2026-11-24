@@ -220,14 +220,10 @@ class SettingsWindow(QDialog):
                 "glass_corner", [("none", "없음"), ("small", "작게"), ("round", "보통")]
             ),
         )
-        hint = (
-            "노트를 클릭해 활성화하면 유리처럼 비쳐 보이고, 다른 창을 쓰는 동안에는 "
-            "윈도우가 단색으로 바꿔 그려요."
-            if acrylic_supported()
-            else "이 PC에서는 블러 효과를 쓸 수 없어서 반투명 배경으로 보여요. "
-            "(윈도우 11 22H2 이상 필요)"
+        self.glass_hint = QLabel(
+            "이 PC에서는 블러 효과를 쓸 수 없어서 반투명 배경으로 보여요. (윈도우 11 필요)"
         )
-        self.glass_hint = QLabel(hint)
+        self.glass_hint.setVisible(not acrylic_supported())
         self.glass_hint.setWordWrap(True)
         self.glass_hint.setStyleSheet("color: palette(placeholder-text);")
         gform.addRow(self.glass_hint)
