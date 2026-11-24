@@ -1,0 +1,18 @@
+Sticky Todo에 포함된 제3자 소프트웨어
+=====================================
+
+StickyTodo.exe에는 아래 소프트웨어가 함께 묶여 있습니다.
+
+1. Qt for Python (PySide6 / shiboken6) 6.12
+   - 라이선스: GNU Lesser General Public License v3 (LGPL-3.0)
+   - 소스: https://code.qt.io/cgit/pyside/pyside-setup.git/  ,  https://www.qt.io/download-open-source
+   - 라이선스 전문: https://www.gnu.org/licenses/lgpl-3.0.html
+
+2. Python 3.12
+   - 라이선스: Python Software Foundation License
+   - https://docs.python.org/3/license.html
+
+3. Pretendard (Regular, SemiBold, Bold)
+   - 라이선스: SIL Open Font License 1.1
+   - https://github.com/orioncactus/pretendard
+   - 라이선스 전문: licenses/Pretendard-OFL.txt

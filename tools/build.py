@@ -1,7 +1,7 @@
 """exe 빌드: 아이콘(.ico) 생성 → PyInstaller(--onefile --noconsole) → SHA256 체크섬.
 
 사용법:  uv run python tools/build.py
-결과물:  dist/StickyTodo.exe, dist/StickyTodo.exe.sha256
+결과물:  dist/StickyTodo.exe, dist/StickyTodo.exe.sha256, dist/StickyTodo-<버전>.zip (배포용)
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import os
 import struct
 import subprocess
 import sys
+import tomllib
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -62,6 +64,9 @@ def run_pyinstaller(icon: Path) -> Path:
         "--specpath", str(BUILD),
         "--distpath", str(DIST),
         "--exclude-module", "tkinter",
+        # 같이 넣는 글꼴(Pretendard)과 라이선스
+        "--add-data", f"{ROOT / 'src' / 'sticky_todo' / 'fonts'}{os.pathsep}sticky_todo/fonts",
+        "--add-data", f"{ROOT / 'licenses'}{os.pathsep}licenses",
         str(ROOT / "packaging" / "entry.py"),
     ]  # fmt: skip
     subprocess.run(cmd, check=True, cwd=ROOT)
@@ -74,13 +79,35 @@ def write_checksum(exe: Path) -> str:
     return digest
 
 
+def version() -> str:
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    return data["project"]["version"]
+
+
+def make_zip(exe: Path) -> Path:
+    """친구·사용자에게 보낼 묶음: exe + 체크섬 + 설명서 + 라이선스."""
+    out = DIST / f"{NAME}-{version()}.zip"
+    files = {
+        exe: exe.name,
+        exe.with_name(exe.name + ".sha256"): exe.name + ".sha256",
+        ROOT / "README.md": "README.md",
+        ROOT / "THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
+        ROOT / "licenses" / "Pretendard-OFL.txt": "licenses/Pretendard-OFL.txt",
+    }
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+        for src, name in files.items():
+            z.write(src, f"{NAME}/{name}")
+    return out
+
+
 def main() -> int:
     icon = BUILD / "icon.ico"
     make_ico(icon)
     exe = run_pyinstaller(icon)
     digest = write_checksum(exe)
+    bundle = make_zip(exe)
     size_mb = exe.stat().st_size / 1024 / 1024
-    print(f"\n완료: {exe}  ({size_mb:.1f} MB)\nSHA256: {digest}")
+    print(f"\n완료: {exe}  ({size_mb:.1f} MB)\nSHA256: {digest}\n배포용: {bundle}")
     return 0
 
 
