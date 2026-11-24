@@ -75,8 +75,9 @@ SCHEMA: dict[str, Field] = {
     "bg_color": Field(_yellow["bg_color"], _color, str.upper),
     "title_color": Field(_yellow["title_color"], _color, str.upper),
     "text_color": Field(_yellow["text_color"], _color, str.upper),
-    "glass_opacity": Field(60, _int_range(0, 100)),
+    "glass_transparency": Field(40, _int_range(0, 100)),  # 0=색조 불투명, 100=유리만
     "glass_tint": Field(GLASS_TINTS["light"], _color, str.upper),
+    "glass_corner": Field("round", _choice("none", "small", "round")),
     "corner_radius": Field(10, _int_range(0, 24)),
     "shadow": Field(True, _bool),
     "title_bar_mode": Field("always", _choice("always", "hover")),
@@ -131,6 +132,16 @@ class Settings:
     def as_dict(self) -> dict[str, Any]:
         return dict(self._values)
 
+    def restore(self, values: dict[str, Any]) -> None:
+        """as_dict()로 받아둔 값으로 되돌린다 (설정 창 취소용)."""
+        for k, v in values.items():
+            if k in SCHEMA:
+                self.set(k, v)
+
+    def reset(self, keys: list[str]) -> None:
+        for k in keys:
+            self._values[k] = SCHEMA[k].default
+
     # ------------------------------------------------------------ 파일
 
     @classmethod
@@ -153,3 +164,38 @@ class Settings:
 
     def save(self, path: Path) -> None:
         atomic_write_text(Path(path), json.dumps(self._values, ensure_ascii=False, indent=2))
+
+
+# 설정 창의 "기본값으로"가 되돌리는 키 (창 위치·제목·고정 여부는 유지)
+APPEARANCE_KEYS = [
+    "style",
+    "font_family",
+    "font_size",
+    "bg_color",
+    "title_color",
+    "text_color",
+    "glass_transparency",
+    "glass_tint",
+    "glass_corner",
+    "corner_radius",
+    "shadow",
+    "title_bar_mode",
+]
+LIST_KEYS = ["check_style", "done_style", "line_spacing"]
+
+
+def luminance(color: str) -> float:
+    """상대 휘도 (0=검정, 1=흰색). WCAG 공식."""
+    c = color.lstrip("#")
+    rgb = [int(c[i : i + 2], 16) / 255 for i in (0, 2, 4)]
+    lin = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb]
+    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
+
+
+def contrast_text(background: str) -> str:
+    """배경 위에서 잘 읽히는 글자색 (흰색 또는 거의 검정)."""
+    lum = luminance(background)
+    # 흰 글자와 검정 글자 중 대비(WCAG contrast ratio)가 더 큰 쪽
+    white = 1.05 / (lum + 0.05)
+    black = (lum + 0.05) / 0.05
+    return "#FFFFFF" if white > black else "#1A1A1A"

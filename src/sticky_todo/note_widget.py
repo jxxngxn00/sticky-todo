@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QMimeData, QPoint, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import (
     QColor,
+    QCursor,
     QDrag,
     QFont,
     QFontDatabase,
@@ -39,8 +41,9 @@ from PySide6.QtWidgets import (
 )
 
 from . import markdown_io
+from .backdrop import CORNER_RADIUS_PX, disable_glass, enable_glass
 from .paths import default_export_dir
-from .settings import PRESETS, Settings
+from .settings import PRESETS, Settings, contrast_text
 from .storage import Todo, TodoStore
 
 INDENT_PX = 20
@@ -49,6 +52,7 @@ FALLBACK_FONT = "Malgun Gothic"
 PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
 TOAST_MS = 5000
 SHADOW_PX = 10
+GLASS_FALLBACK_MIN_ALPHA = 0.75
 
 
 def _rgba(color: str, alpha: float) -> str:
@@ -90,6 +94,58 @@ def compute_drop(
     hi = prev[1] + 1 if prev else 0
     lo = nxt[1] if nxt else 0
     return before, max(lo, min(desired, hi))
+
+
+# ---------------------------------------------------------------- 완료 항목 표시 방식
+
+
+@dataclass
+class _Node:
+    todo: Todo
+    children: list[_Node] = field(default_factory=list)
+
+    def all_done(self) -> bool:
+        return self.todo.done and all(c.all_done() for c in self.children)
+
+
+def _build_tree(todos: list[Todo]) -> list[_Node]:
+    roots: list[_Node] = []
+    stack: list[_Node] = []
+    for t in todos:
+        node = _Node(t)
+        while stack and stack[-1].todo.indent >= t.indent:
+            stack.pop()
+        (stack[-1].children if stack else roots).append(node)
+        stack.append(node)
+    return roots
+
+
+def arrange_rows(todos: list[Todo], done_style: str) -> list[tuple[Todo, bool, bool]]:
+    """화면에 보일 순서대로 (todo, 흐리게, 취소선).
+
+    - strike: 완료 항목에 취소선(+살짝 흐리게)
+    - dim:    완료 항목을 흐리게만
+    - bottom: 같은 부모 안에서 완료 항목을 하위 항목과 함께 맨 아래로
+    - hide:   하위 항목까지 전부 완료된 항목만 숨김. 안 끝난 하위 항목이 있으면 흐리게 보임
+    """
+    if done_style == "dim":
+        return [(t, t.done, False) for t in todos]
+    if done_style == "strike":
+        return [(t, t.done, t.done) for t in todos]
+
+    out: list[tuple[Todo, bool, bool]] = []
+
+    def walk(nodes: list[_Node]) -> None:
+        if done_style == "bottom":
+            nodes = [n for n in nodes if not n.todo.done] + [n for n in nodes if n.todo.done]
+        for n in nodes:
+            if done_style == "hide" and n.all_done():
+                continue
+            out.append((n.todo, n.todo.done, n.todo.done))
+            walk(n.children)
+
+    walk(_build_tree(todos))
+    return out
 
 
 # ---------------------------------------------------------------- 체크 버튼
@@ -191,7 +247,15 @@ class TodoRow(QWidget):
     drag_requested = Signal(str, QPoint)
     indent_requested = Signal(str, int)  # 편집 중 Tab / Shift+Tab
 
-    def __init__(self, todo: Todo, style: dict, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        todo: Todo,
+        style: dict,
+        parent: QWidget | None = None,
+        *,
+        dim: bool = False,
+        strike: bool = False,
+    ) -> None:
         super().__init__(parent)
         self.todo = todo
         self.setObjectName("row")
@@ -216,11 +280,8 @@ class TodoRow(QWidget):
         lay.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
 
         self.label = WrapLabel(todo.text, self)
-        if todo.done:
-            f = QFont(self.label.font())
-            f.setStrikeOut(True)
-            self.label.setFont(f)
-            self.label.setProperty("done", True)
+        self.label.setProperty("dim", dim)  # QSS: 흐린 글자색
+        self.label.setProperty("strike", strike)  # QSS: 취소선
         lay.addWidget(self.label, 1)
 
         self.editor = QLineEdit(self)
@@ -402,8 +463,9 @@ class TodoListView(QScrollArea):
             row.deleteLater()
         self.rows = []
         todos = self.store.todos()
-        for i, todo in enumerate(todos):
-            row = TodoRow(todo, self.style_opts, self.container)
+        shown = arrange_rows(todos, self.style_opts.get("done_style", "strike"))
+        for i, (todo, dim, strike) in enumerate(shown):
+            row = TodoRow(todo, self.style_opts, self.container, dim=dim, strike=strike)
             row.toggled.connect(self.store.set_done)
             row.edited.connect(self._on_edited)
             row.delete_clicked.connect(self.request_delete)
@@ -412,7 +474,8 @@ class TodoListView(QScrollArea):
             row.indent_requested.connect(self._on_editor_indent)
             self._layout.insertWidget(i, row)
             self.rows.append(row)
-        self.empty_label.setVisible(not todos)
+        self.empty_label.setText("완료한 할 일만 있어요" if todos else "할 일이 없어요")
+        self.empty_label.setVisible(not shown)
         if self.selected_id and not any(r.todo.id == self.selected_id for r in self.rows):
             self.selected_id = None
         self._paint_selection()
@@ -501,9 +564,14 @@ class TodoListView(QScrollArea):
 
     # ------------------------------------------------------------ 드래그
 
+    @property
+    def drag_enabled(self) -> bool:
+        # '맨 아래로' 모드는 화면 순서와 실제 순서가 달라서 드래그 정렬을 끈다
+        return self.style_opts.get("done_style") != "bottom"
+
     def _start_drag(self, todo_id: str, press_pos: QPoint) -> None:
         row = self._row(todo_id)
-        if row is None:
+        if row is None or not self.drag_enabled:
             return
         start_x = row.mapTo(self.container, press_pos).x()
         self._drag = (todo_id, row.todo.indent, start_x)
@@ -682,7 +750,6 @@ class TodoInput(QLineEdit):
 
 class NoteWidget(QWidget):
     open_manager = Signal()
-    open_settings = Signal()
 
     def __init__(
         self, store: TodoStore, settings: Settings, settings_path: Path, parent=None
@@ -701,6 +768,12 @@ class NoteWidget(QWidget):
         self._settings_timer.setInterval(500)
         self._settings_timer.timeout.connect(self.save_settings)
         self._restoring = True
+        self._glass_on = False
+        self._settings_win = None
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setSingleShot(True)
+        self._hover_timer.setInterval(400)
+        self._hover_timer.timeout.connect(self._update_title_visibility)
 
         outer = QVBoxLayout(self)
         self._outer = outer
@@ -781,22 +854,91 @@ class NoteWidget(QWidget):
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
 
+    def note_palette(self) -> dict:
+        """현재 모드에서 노트를 그릴 색들."""
+        s = self.settings
+        if s["style"] == "glass":
+            tint = s["glass_tint"]
+            alpha = (100 - s["glass_transparency"]) / 100
+            if not self._glass_on:
+                # 블러가 없으면 너무 투명할 때 뒤 화면과 글자가 섞여 안 읽힌다
+                alpha = max(alpha, GLASS_FALLBACK_MIN_ALPHA)
+            text = contrast_text(tint)
+            edge = 0.30 if text == "#FFFFFF" else 0.65
+            return {
+                "card": _rgba(tint, alpha),
+                "title": _rgba(tint, min(1.0, alpha + 0.15)),
+                "text": text,
+                "solid": tint,
+                "border": f"1px solid {_rgba('#FFFFFF', edge)}",  # 유리 가장자리 하이라이트
+                "radius": CORNER_RADIUS_PX[s["glass_corner"]],
+                "shadow": False,  # 글래스는 윈도우 기본 그림자
+            }
+        return {
+            "card": s["bg_color"],
+            "title": s["title_color"],
+            "text": s["text_color"],
+            "solid": s["bg_color"],
+            "border": "none",
+            "radius": s["corner_radius"],
+            "shadow": s["shadow"],
+        }
+
     def apply_settings(self) -> None:
+        self._update_backdrop()
+        self._apply_style()
+        s = self.settings
+        pal = self.note_palette()
+        spacing = {"compact": 1, "normal": 4, "relaxed": 8}[s["line_spacing"]]
+        self.list_view.style_opts = {
+            "row_pad": spacing,
+            "check_style": s["check_style"],
+            "done_style": s["done_style"],
+            "text_color": pal["text"],
+            "bg_color": pal["solid"],
+        }
+        self.title_bar.set_title(s["title"])
+        self._update_title_visibility()
+        self._on_store_changed()
+
+    def _update_backdrop(self) -> bool:
+        """글래스 모드면 Acrylic을 켜고 아니면 끈다. 켜짐 상태가 바뀌면 True."""
+        was = self._glass_on
+        if not self.isVisible():
+            return False
+        hwnd = int(self.winId())
+        if self.settings["style"] == "glass":
+            dark = contrast_text(self.settings["glass_tint"]) == "#FFFFFF"
+            self._glass_on = enable_glass(hwnd, dark=dark, corner=self.settings["glass_corner"])
+        else:
+            if was:
+                disable_glass(hwnd)
+            self._glass_on = False
+        return was != self._glass_on
+
+    @property
+    def glass_active(self) -> bool:
+        """글래스 모드이고 실제로 블러가 켜졌는지 (False면 반투명 대체)."""
+        return self._glass_on
+
+    def _apply_style(self) -> None:
         s = self.settings
         family = resolve_font_family(s["font_family"])
         font = QFont(family)
         font.setPointSize(s["font_size"])
         self.setFont(font)
 
-        bg, title, text = s["bg_color"], s["title_color"], s["text_color"]
-        r = s["corner_radius"]
+        pal = self.note_palette()
+        card, title, text, solid = pal["card"], pal["title"], pal["text"], pal["solid"]
+        r = pal["radius"]
+        field_base = "#FFFFFF" if text != "#FFFFFF" else "#000000"  # 입력창 바탕
         # 카드 안쪽에만 적용한다. 노트 창 전체에 걸면 메뉴·알림창까지 노트 글자색을 물려받아
         # 다크모드(검은 배경)에서 글자가 안 보인다.
         self.card.setStyleSheet(f"""
             QWidget {{
                 color: {text}; font-family: "{family}"; font-size: {s["font_size"]}pt;
             }}
-            #card {{ background: {bg}; border-radius: {r}px; }}
+            #card {{ background: {card}; border-radius: {r}px; border: {pal["border"]}; }}
             #titleBar {{
                 background: {title};
                 border-top-left-radius: {r}px; border-top-right-radius: {r}px;
@@ -807,29 +949,28 @@ class NoteWidget(QWidget):
             }}
             #titleButton:hover {{ background: {_rgba(text, 0.12)}; }}
             #titleButton:checked {{ background: {_rgba(text, 0.20)}; }}
-            #todoList, #rowContainer {{ background: transparent; }}
+            #todoList, #rowContainer, #bottomBar {{ background: transparent; }}
             #todoList > QWidget > QWidget {{ background: transparent; }}
             #row {{ border-radius: 4px; }}
-            #row:hover {{ background: {_rgba(text, 0.06)}; }}
-            #row[selected="true"] {{ background: {_rgba(text, 0.12)}; }}
-            #row QLabel[done="true"] {{
-                color: {_rgba(text, 0.45)}; text-decoration: line-through;
-            }}
+            #row:hover {{ background: {_rgba(text, 0.07)}; }}
+            #row[selected="true"] {{ background: {_rgba(text, 0.14)}; }}
+            #row QLabel[dim="true"] {{ color: {_rgba(text, 0.45)}; }}
+            #row QLabel[strike="true"] {{ text-decoration: line-through; }}
             #rowDelete {{ border: none; background: transparent; color: {_rgba(text, 0.5)}; }}
-            #rowDelete:hover {{ color: #D32F2F; }}
-            #emptyLabel {{ color: {_rgba(text, 0.4)}; padding: 20px; }}
+            #rowDelete:hover {{ color: #E53935; }}
+            #emptyLabel {{ color: {_rgba(text, 0.45)}; padding: 20px; }}
             #dropIndicator {{ background: {text}; }}
             QLineEdit {{
-                background: {_rgba("#FFFFFF", 0.45)}; border: 1px solid {_rgba(text, 0.2)};
+                background: {_rgba(field_base, 0.45)}; border: 1px solid {_rgba(text, 0.2)};
                 border-radius: 4px; padding: 3px 6px;
                 selection-background-color: {_rgba(text, 0.3)};
             }}
-            #todoInput {{ background: {_rgba("#FFFFFF", 0.35)}; }}
+            #todoInput {{ background: {_rgba(field_base, 0.30)}; }}
             #countLabel {{ color: {_rgba(text, 0.6)}; }}
             #toast {{ background: {_rgba(text, 0.85)}; }}
-            #toast QLabel {{ color: {bg}; }}
+            #toast QLabel {{ color: {solid}; }}
             #toastButton {{
-                border: none; background: transparent; color: {bg};
+                border: none; background: transparent; color: {solid};
                 font-weight: bold; text-decoration: underline;
             }}
             QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
@@ -840,7 +981,7 @@ class NoteWidget(QWidget):
             QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
             QSizeGrip {{ width: 14px; height: 14px; }}
             QToolTip {{
-                color: {text}; background: {bg}; border: 1px solid {_rgba(text, 0.3)};
+                color: {text}; background: {solid}; border: 1px solid {_rgba(text, 0.3)};
                 padding: 2px 4px;
             }}
         """)
@@ -848,33 +989,51 @@ class NoteWidget(QWidget):
         # 그림자는 paintEvent에서 카드 바깥 여백에 직접 그린다.
         # (QGraphicsDropShadowEffect는 카드를 그림으로 캐시해서 색 변경이 안 보이고
         #  글자 렌더링도 틀어지는 문제가 있었다)
-        m = SHADOW_PX if s["shadow"] else 0
+        m = SHADOW_PX if pal["shadow"] else 0
         self._outer.setContentsMargins(m, m, m, m)
         self.update()
 
-        spacing = {"compact": 1, "normal": 4, "relaxed": 8}[s["line_spacing"]]
-        self.list_view.style_opts = {
-            "row_pad": spacing,
-            "check_style": s["check_style"],
-            "text_color": text,
-            "bg_color": bg,
-        }
-        self.title_bar.set_title(s["title"])
-        self._on_store_changed()
-
     def paintEvent(self, _event) -> None:  # noqa: N802
-        if not self.settings["shadow"]:
+        pal = self.note_palette()
+        if not pal["shadow"]:
             return
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         p.setPen(Qt.PenStyle.NoPen)
         rect = QRectF(self.card.geometry())
-        radius = self.settings["corner_radius"]
+        radius = pal["radius"]
         # 바깥에서 안쪽으로 옅은 둥근 사각형을 겹쳐 그려 부드러운 그림자를 만든다
         for i in range(SHADOW_PX, 0, -1):
             p.setBrush(QColor(0, 0, 0, 6))
             r = rect.adjusted(-i, -i + 2, i, i + 2)
             p.drawRoundedRect(r, radius + i, radius + i)
+
+    def showEvent(self, e) -> None:  # noqa: N802
+        super().showEvent(e)
+        # 창이 처음 뜨거나 (항상 위 전환으로) 다시 만들어질 때 글래스를 다시 건다
+        if self._update_backdrop() or self.settings["style"] == "glass":
+            self._apply_style()
+
+    # 제목 바: 항상 표시 / 마우스 올릴 때만
+
+    def _update_title_visibility(self, hovered: bool | None = None) -> None:
+        if hovered is None:
+            hovered = self.isVisible() and self.geometry().contains(QCursor.pos())
+        show = (
+            self.settings["title_bar_mode"] == "always"
+            or hovered
+            or self.title_bar.editor.isVisible()
+        )
+        self.title_bar.setVisible(show)
+
+    def enterEvent(self, e) -> None:  # noqa: N802
+        self._hover_timer.stop()
+        self._update_title_visibility(True)
+        super().enterEvent(e)
+
+    def leaveEvent(self, e) -> None:  # noqa: N802
+        self._hover_timer.start()  # 살짝 늦게 숨겨서 깜빡임 방지
+        super().leaveEvent(e)
 
     def _on_store_changed(self) -> None:
         self.list_view.rebuild()
@@ -946,13 +1105,26 @@ class NoteWidget(QWidget):
         clear = menu.addAction("완료 항목 지우기", self.clear_completed)
         clear.setEnabled(self.store.counts()["done"] > 0)
         menu.addSeparator()
-        menu.addAction("설정…", self.open_settings.emit).setEnabled(False)  # 3단계
+        menu.addAction("설정…", self.open_settings_window)
         auto = menu.addAction("시작 시 자동 실행")  # 5단계
         auto.setCheckable(True)
         auto.setEnabled(False)
         menu.addSeparator()
         menu.addAction("종료", self.close)
         return menu
+
+    def open_settings_window(self) -> None:
+        from .settings_window import SettingsWindow
+
+        if self._settings_win is None:
+            self._settings_win = SettingsWindow(self)
+            self._settings_win.destroyed.connect(self._forget_settings_window)
+        self._settings_win.show()
+        self._settings_win.raise_()
+        self._settings_win.activateWindow()
+
+    def _forget_settings_window(self) -> None:
+        self._settings_win = None
 
     def clear_completed(self) -> None:
         n = self.store.clear_completed()

@@ -208,3 +208,87 @@ def test_menu_and_dialogs_do_not_inherit_note_colors(note):
     menu = note.build_menu()
     menu.ensurePolished()
     assert menu.palette().color(menu.foregroundRole()).name().upper() != note.settings["text_color"]
+
+
+# ---------------------------------------------------------------- 완료 항목 표시 방식
+
+from sticky_todo.note_widget import arrange_rows  # noqa: E402
+from sticky_todo.storage import Todo  # noqa: E402
+
+
+def _todos(spec):
+    """spec: [("A", indent, done), ...]"""
+    return [Todo(id=t, text=t, indent=i, done=d) for t, i, d in spec]
+
+
+def _show(rows):
+    return [(t.text, dim, strike) for t, dim, strike in rows]
+
+
+SPEC = [
+    ("A", 0, True),
+    ("A1", 1, False),
+    ("B", 0, False),
+    ("C", 0, True),
+    ("C1", 1, True),
+    ("D", 0, False),
+    ("D1", 1, True),
+    ("D2", 1, False),
+]
+
+
+def test_arrange_strike_and_dim():
+    todos = _todos(SPEC)
+    assert [r[0].text for r in arrange_rows(todos, "strike")] == [t for t, _, _ in SPEC]
+    assert _show(arrange_rows(todos, "strike"))[0] == ("A", True, True)
+    assert _show(arrange_rows(todos, "dim"))[0] == ("A", True, False)
+
+
+def test_arrange_bottom_within_parent():
+    rows = arrange_rows(_todos(SPEC), "bottom")
+    assert [r[0].text for r in rows] == ["B", "D", "D2", "D1", "A", "A1", "C", "C1"]
+
+
+def test_arrange_hide_only_fully_done():
+    rows = _show(arrange_rows(_todos(SPEC), "hide"))
+    # A는 안 끝난 A1이 있어서 흐리게 남고, C(+C1)와 D1은 숨김
+    assert rows == [
+        ("A", True, True),
+        ("A1", False, False),
+        ("B", False, False),
+        ("D", False, False),
+        ("D2", False, False),
+    ]
+
+
+def test_note_hide_mode_and_drag_flag(note, store):
+    a = store.add("A")
+    store.add("B")
+    store.set_done(a.id, True)
+    note.settings.set("done_style", "hide")
+    note.apply_settings()
+    assert [r.todo.text for r in note.list_view.rows] == ["B"]
+    assert note.list_view.drag_enabled
+    note.settings.set("done_style", "bottom")
+    note.apply_settings()
+    assert [r.todo.text for r in note.list_view.rows] == ["B", "A"]
+    assert not note.list_view.drag_enabled
+
+
+def test_check_style_and_spacing_applied(note, store):
+    store.add("A")
+    note.settings.set("check_style", "bullet")
+    note.settings.set("line_spacing", "relaxed")
+    note.apply_settings()
+    row = note.list_view.rows[0]
+    assert row.check.shape == "bullet"
+    assert row.layout().contentsMargins().top() == 8
+
+
+def test_title_bar_hover_mode(note):
+    note.settings.set("title_bar_mode", "hover")
+    note.apply_settings()
+    note._update_title_visibility(False)
+    assert not note.title_bar.isVisible()
+    note._update_title_visibility(True)
+    assert note.title_bar.isVisible()
