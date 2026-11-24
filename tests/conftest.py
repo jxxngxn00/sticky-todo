@@ -1,12 +1,16 @@
-import pytest
-from PySide6.QtCore import QCoreApplication
+import os
 
-from sticky_todo.storage import TodoStore
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")  # 테스트는 화면 없이
+
+import pytest  # noqa: E402
+from PySide6.QtWidgets import QApplication  # noqa: E402
+
+from sticky_todo.storage import TodoStore  # noqa: E402
 
 
 @pytest.fixture(scope="session")
 def qapp():
-    app = QCoreApplication.instance() or QCoreApplication([])
+    app = QApplication.instance() or QApplication([])
     yield app
 
 

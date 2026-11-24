@@ -1,28 +1,56 @@
-"""진입점. 노트 위젯은 2단계에서 연결한다."""
+"""진입점: 데이터·설정을 읽고 노트 위젯을 띄운다."""
 
 from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QCoreApplication
+from PySide6.QtCore import QLockFile, QTimer
+from PySide6.QtWidgets import QApplication, QMessageBox
 
+from .note_widget import NoteWidget
 from .paths import resolve_paths
-from .storage import TodoStore
+from .settings import Settings
+from .storage import LoadStatus, TodoStore, UnsupportedVersionError
 
 
 def main() -> int:
-    app = QCoreApplication(sys.argv)
+    app = QApplication(sys.argv)
+    app.setApplicationName("Sticky Todo")
+    app.setQuitOnLastWindowClosed(False)
+
     paths = resolve_paths()
-    paths.ensure_dirs()
+    try:
+        paths.ensure_dirs()
+    except OSError as e:
+        QMessageBox.critical(None, "Sticky Todo", f"데이터 폴더를 만들 수 없어요.\n{e}")
+        return 1
+
+    # 두 개가 동시에 떠서 같은 파일을 덮어쓰는 걸 막는다
+    lock = QLockFile(str(paths.data_dir / "app.lock"))
+    lock.setStaleLockTime(0)
+    if not lock.tryLock(100):
+        QMessageBox.information(None, "Sticky Todo", "Sticky Todo가 이미 실행 중이에요.")
+        return 0
+
+    settings = Settings.load(paths.settings_file)
     store = TodoStore(paths.todos_file, paths.backups_dir, parent=app)
-    result = store.load()
-    counts = store.counts()
-    mode = "포터블" if paths.portable else "일반"
-    print(f"[{mode}] 데이터 폴더: {paths.data_dir}")
-    print(f"로드 상태: {result.status} {result.message}")
-    print(f"할 일 {counts['all']}개 (완료 {counts['done']}개)")
-    print("노트 위젯은 2단계에서 추가될 예정이야.")
-    return 0
+    try:
+        result = store.load()
+    except UnsupportedVersionError as e:
+        QMessageBox.critical(None, "Sticky Todo", str(e))
+        return 1
+
+    note = NoteWidget(store, settings, paths.settings_file)
+    app.aboutToQuit.connect(store.flush)
+    app.aboutToQuit.connect(note.save_settings)
+    note.show()
+
+    if result.status in (LoadStatus.RECOVERED, LoadStatus.RESET):
+        QTimer.singleShot(0, lambda: QMessageBox.warning(note, "Sticky Todo", result.message))
+
+    code = app.exec()
+    lock.unlock()
+    return code
 
 
 if __name__ == "__main__":
