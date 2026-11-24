@@ -188,3 +188,15 @@ def test_menu_builds(note):
 def test_window_can_shrink(note):
     note.resize(200, 150)
     assert (note.width(), note.height()) == (200, 150)
+
+
+def test_preset_restyles_existing_widgets(note):
+    """색을 바꾸면 새로 만든 줄뿐 아니라 제목 바·입력창도 새 색을 받아야 한다."""
+    note.apply_preset("mint")
+    mint = PRESETS["mint"]
+    assert mint["title_color"].upper() in note.styleSheet()
+    assert mint["bg_color"].upper() in note.styleSheet()
+    assert note.card.graphicsEffect() is None  # 그림을 캐시하는 효과를 쓰지 않음
+    for w in (note.title_bar.label, note.input, note.count_label, note.list_view.empty_label):
+        w.ensurePolished()
+        assert w.font().pointSize() == note.settings["font_size"]

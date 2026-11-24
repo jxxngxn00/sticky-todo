@@ -25,7 +25,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -49,6 +48,7 @@ MIME_TODO = "application/x-sticky-todo-id"
 FALLBACK_FONT = "Malgun Gothic"
 PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
 TOAST_MS = 5000
+SHADOW_PX = 10
 
 
 def _rgba(color: str, alpha: float) -> str:
@@ -788,22 +788,12 @@ class NoteWidget(QWidget):
         font.setPointSize(s["font_size"])
         self.setFont(font)
 
-        shadow = s["shadow"]
-        m = 12 if shadow else 0
-        self._outer.setContentsMargins(m, m, m, m)
-        if shadow:
-            eff = QGraphicsDropShadowEffect(self.card)
-            eff.setBlurRadius(18)
-            eff.setOffset(0, 3)
-            eff.setColor(QColor(0, 0, 0, 70))
-            self.card.setGraphicsEffect(eff)
-        else:
-            self.card.setGraphicsEffect(None)
-
         bg, title, text = s["bg_color"], s["title_color"], s["text_color"]
         r = s["corner_radius"]
         self.setStyleSheet(f"""
-            QWidget {{ color: {text}; }}
+            QWidget {{
+                color: {text}; font-family: "{family}"; font-size: {s["font_size"]}pt;
+            }}
             #card {{ background: {bg}; border-radius: {r}px; }}
             #titleBar {{
                 background: {title};
@@ -820,7 +810,9 @@ class NoteWidget(QWidget):
             #row {{ border-radius: 4px; }}
             #row:hover {{ background: {_rgba(text, 0.06)}; }}
             #row[selected="true"] {{ background: {_rgba(text, 0.12)}; }}
-            #row QLabel[done="true"] {{ color: {_rgba(text, 0.45)}; }}
+            #row QLabel[done="true"] {{
+                color: {_rgba(text, 0.45)}; text-decoration: line-through;
+            }}
             #rowDelete {{ border: none; background: transparent; color: {_rgba(text, 0.5)}; }}
             #rowDelete:hover {{ color: #D32F2F; }}
             #emptyLabel {{ color: {_rgba(text, 0.4)}; padding: 20px; }}
@@ -847,6 +839,13 @@ class NoteWidget(QWidget):
             QSizeGrip {{ width: 14px; height: 14px; }}
         """)
 
+        # 그림자는 paintEvent에서 카드 바깥 여백에 직접 그린다.
+        # (QGraphicsDropShadowEffect는 카드를 그림으로 캐시해서 색 변경이 안 보이고
+        #  글자 렌더링도 틀어지는 문제가 있었다)
+        m = SHADOW_PX if s["shadow"] else 0
+        self._outer.setContentsMargins(m, m, m, m)
+        self.update()
+
         spacing = {"compact": 1, "normal": 4, "relaxed": 8}[s["line_spacing"]]
         self.list_view.style_opts = {
             "row_pad": spacing,
@@ -856,6 +855,20 @@ class NoteWidget(QWidget):
         }
         self.title_bar.set_title(s["title"])
         self._on_store_changed()
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        if not self.settings["shadow"]:
+            return
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        rect = QRectF(self.card.geometry())
+        radius = self.settings["corner_radius"]
+        # 바깥에서 안쪽으로 옅은 둥근 사각형을 겹쳐 그려 부드러운 그림자를 만든다
+        for i in range(SHADOW_PX, 0, -1):
+            p.setBrush(QColor(0, 0, 0, 6))
+            r = rect.adjusted(-i, -i + 2, i, i + 2)
+            p.drawRoundedRect(r, radius + i, radius + i)
 
     def _on_store_changed(self) -> None:
         self.list_view.rebuild()
