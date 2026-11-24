@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from PySide6.QtCore import QLockFile, QTimer
+from PySide6.QtCore import QLockFile, QTimer, qInstallMessageHandler
 from PySide6.QtWidgets import QApplication, QMessageBox
 
 from .note_widget import NoteWidget
@@ -12,8 +12,22 @@ from .paths import resolve_paths
 from .settings import Settings
 from .storage import LoadStatus, TodoStore, UnsupportedVersionError
 
+_previous_handler = None
+
+
+def _qt_message_filter(mode, context, message: str) -> None:
+    # 투명 배경 창에서 Qt가 가끔 내는 무해한 경고. 화면·데이터에 영향 없음.
+    if message.startswith("UpdateLayeredWindowIndirect failed"):
+        return
+    if _previous_handler is not None:
+        _previous_handler(mode, context, message)
+    else:
+        print(message, file=sys.stderr)
+
 
 def main() -> int:
+    global _previous_handler
+    _previous_handler = qInstallMessageHandler(_qt_message_filter)
     app = QApplication(sys.argv)
     app.setApplicationName("Sticky Todo")
     app.setQuitOnLastWindowClosed(False)

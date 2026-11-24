@@ -194,9 +194,17 @@ def test_preset_restyles_existing_widgets(note):
     """색을 바꾸면 새로 만든 줄뿐 아니라 제목 바·입력창도 새 색을 받아야 한다."""
     note.apply_preset("mint")
     mint = PRESETS["mint"]
-    assert mint["title_color"].upper() in note.styleSheet()
-    assert mint["bg_color"].upper() in note.styleSheet()
+    assert mint["title_color"].upper() in note.card.styleSheet()
+    assert mint["bg_color"].upper() in note.card.styleSheet()
     assert note.card.graphicsEffect() is None  # 그림을 캐시하는 효과를 쓰지 않음
     for w in (note.title_bar.label, note.input, note.count_label, note.list_view.empty_label):
         w.ensurePolished()
         assert w.font().pointSize() == note.settings["font_size"]
+
+
+def test_menu_and_dialogs_do_not_inherit_note_colors(note):
+    """노트 글자색이 메뉴에 새면 다크모드에서 글자가 안 보인다."""
+    assert note.styleSheet() == ""
+    menu = note.build_menu()
+    menu.ensurePolished()
+    assert menu.palette().color(menu.foregroundRole()).name().upper() != note.settings["text_color"]

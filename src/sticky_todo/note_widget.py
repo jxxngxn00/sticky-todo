@@ -790,7 +790,9 @@ class NoteWidget(QWidget):
 
         bg, title, text = s["bg_color"], s["title_color"], s["text_color"]
         r = s["corner_radius"]
-        self.setStyleSheet(f"""
+        # 카드 안쪽에만 적용한다. 노트 창 전체에 걸면 메뉴·알림창까지 노트 글자색을 물려받아
+        # 다크모드(검은 배경)에서 글자가 안 보인다.
+        self.card.setStyleSheet(f"""
             QWidget {{
                 color: {text}; font-family: "{family}"; font-size: {s["font_size"]}pt;
             }}
@@ -837,6 +839,10 @@ class NoteWidget(QWidget):
             QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
             QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
             QSizeGrip {{ width: 14px; height: 14px; }}
+            QToolTip {{
+                color: {text}; background: {bg}; border: 1px solid {_rgba(text, 0.3)};
+                padding: 2px 4px;
+            }}
         """)
 
         # 그림자는 paintEvent에서 카드 바깥 여백에 직접 그린다.
