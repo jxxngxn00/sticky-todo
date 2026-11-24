@@ -726,7 +726,7 @@ class TitleBar(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._press: QPoint | None = None
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setContentsMargins(8, 10, 8, 8)
         lay.setSpacing(0)
 
         self.prev_btn = self._button("이전 날짜 (Alt+←)")
@@ -741,8 +741,8 @@ class TitleBar(QWidget):
         self.sub.setObjectName("titleSub")
         self.sub.setMinimumWidth(20)
         title_box = QVBoxLayout()
-        title_box.setContentsMargins(2, 0, 2, 0)
-        title_box.setSpacing(0)
+        title_box.setContentsMargins(6, 0, 6, 0)
+        title_box.setSpacing(1)
         title_box.addWidget(self.label)
         title_box.addWidget(self.sub)
         self.next_btn = self._button("다음 날짜 (Alt+→)")
