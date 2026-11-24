@@ -1,0 +1,33 @@
+# Sticky Todo
+
+윈도우 바탕화면에 스티키 노트처럼 떠 있는 할 일 목록 위젯.
+
+> 개발 중 (1단계: 데이터 로직 완료). 노트 위젯 UI는 2단계에서 추가됨.
+
+## 개발 환경
+
+Python은 [uv](https://docs.astral.sh/uv/)로 관리한다.
+
+```powershell
+winget install astral-sh.uv   # 최초 1회
+uv sync                        # Python 3.12 + 의존성 설치
+uv run sticky-todo             # 실행
+uv run pytest                  # 테스트
+uv run ruff check .            # 린트
+uv run ruff format .           # 포맷
+uv run pip-audit               # 의존성 취약점 점검
+```
+
+## 데이터 저장 위치
+
+- 기본: `%APPDATA%\StickyTodo\`
+  - `todos.json` 할 일, `settings.json` 설정, `backups\` 이전 버전 (최근 5개)
+- 포터블 모드: 실행 파일과 같은 폴더에 `portable`이라는 빈 파일을 두면 그 폴더의 `data\`에 저장
+- `todos.json`이 손상되면 `backups\`의 최신 정상본으로 자동 복구하고, 손상된 파일은
+  `todos.json.corrupt-날짜`로 따로 보관한다.
+
+## 할 일 계층 (들여쓰기)
+
+- 각 할 일은 `indent`(0, 1, 2…) 값을 가지며 깊이 제한은 없다.
+- 부모를 옮기거나 지우면 하위 항목도 같이 옮겨지거나 지워진다. 완료 체크는 그 항목만 바뀐다.
+- 마크다운으로 내보낼 때 한 단계당 공백 2칸으로 들여쓴다. 불러올 때는 공백 2칸·4칸·탭을 모두 인식한다.
