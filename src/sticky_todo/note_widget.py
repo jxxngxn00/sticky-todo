@@ -928,6 +928,7 @@ class NoteWidget(QWidget):
         super().__init__(parent)
         self.store = store
         self.autostart = autostart
+        self.hotkey = None  # main에서 GlobalHotkey를 붙인다
         self.hide_to_tray = False  # 트레이가 있으면 ✕는 숨기기
         self._quitting = False
         self.settings = settings
@@ -1096,6 +1097,7 @@ class NoteWidget(QWidget):
         self._update_title_visibility()
         if self._manager_win is not None:
             self._manager_win.apply_style()  # 강조색을 관리 창에도
+        self.sync_hotkey()
         self._on_store_changed()
 
     def _apply_style(self) -> None:
@@ -1544,6 +1546,23 @@ class NoteWidget(QWidget):
             self.show()
             self.raise_()
             self.activateWindow()
+
+    def summon(self) -> None:
+        """전역 단축키: 노트를 앞으로 꺼내고 입력칸에 커서."""
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.input.setFocus()
+
+    def sync_hotkey(self) -> None:
+        """설정에 맞춰 전역 단축키를 등록/해제. 다른 앱이 쓰고 있으면 알려준다."""
+        if self.hotkey is None:
+            return
+        if self.settings["global_hotkey"]:
+            if not self.hotkey.registered and not self.hotkey.register():
+                self.show_toast("Ctrl+Alt+T는 다른 프로그램이 쓰고 있어서 사용할 수 없어요")
+        else:
+            self.hotkey.unregister()
 
     def quit_app(self) -> None:
         self._quitting = True

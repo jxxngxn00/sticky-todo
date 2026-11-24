@@ -271,6 +271,9 @@ class SettingsWindow(QDialog):
         self.auto_archive_check = QCheckBox("날짜가 바뀌면 지난 날 완료한 항목을 보관함으로")
         self.auto_archive_check.toggled.connect(lambda on: self.change("auto_archive", on))
         form.addRow("보관", self.auto_archive_check)
+        self.hotkey_check = QCheckBox("Ctrl+Alt+T로 어디서든 노트 불러오기")
+        self.hotkey_check.toggled.connect(lambda on: self.change("global_hotkey", on))
+        form.addRow("단축키", self.hotkey_check)
         return page
 
     # ------------------------------------------------------------ 값 ↔ 화면
@@ -299,6 +302,8 @@ class SettingsWindow(QDialog):
             self.shadow_check.setChecked(s["shadow"])
         with QSignalBlocker(self.auto_archive_check):
             self.auto_archive_check.setChecked(s["auto_archive"])
+        with QSignalBlocker(self.hotkey_check):
+            self.hotkey_check.setChecked(s["global_hotkey"])
         for key, cb in self.color_buttons.items():
             cb.set_color(s[key])
         self._sync_visibility()

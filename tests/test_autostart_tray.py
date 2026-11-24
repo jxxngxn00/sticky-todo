@@ -88,3 +88,60 @@ def test_tray_menu(note):
     note.hide()
     tray._on_activated(QSystemTrayIcon.ActivationReason.Trigger)
     assert note.isVisible()
+
+
+# ---------------------------------------------------------------- 전역 단축키
+
+import ctypes  # noqa: E402
+
+from PySide6.QtCore import QByteArray  # noqa: E402
+
+from sticky_todo import hotkey  # noqa: E402
+
+
+def _msg(message, wparam):
+    m = hotkey._MSG()
+    m.message, m.wParam = message, wparam
+    return m
+
+
+def test_is_hotkey_message():
+    et = QByteArray(b"windows_generic_MSG")
+    ok = _msg(hotkey.WM_HOTKEY, hotkey.HOTKEY_ID)
+    assert hotkey.is_hotkey_message(et, ctypes.addressof(ok))
+    other_id = _msg(hotkey.WM_HOTKEY, 1)
+    assert not hotkey.is_hotkey_message(et, ctypes.addressof(other_id))
+    assert not hotkey.is_hotkey_message(QByteArray(b"other"), ctypes.addressof(ok))
+    assert not hotkey.is_hotkey_message(et, 0)
+
+
+class FakeHotkey:
+    def __init__(self, works=True):
+        self.works = works
+        self.registered = False
+
+    def register(self):
+        self.registered = self.works
+        return self.works
+
+    def unregister(self):
+        self.registered = False
+
+
+def test_hotkey_follows_setting_and_reports_conflict(note):
+    note.hotkey = FakeHotkey()
+    note.sync_hotkey()
+    assert note.hotkey.registered
+    note.settings.set("global_hotkey", False)
+    note.apply_settings()
+    assert not note.hotkey.registered
+    note.hotkey = FakeHotkey(works=False)  # 다른 앱이 이미 사용 중
+    note.settings.set("global_hotkey", True)
+    note.sync_hotkey()
+    assert "다른 프로그램" in note.toast_label.text()
+
+
+def test_summon_shows_and_focuses_input(note):
+    note.hide()
+    note.summon()
+    assert note.isVisible()

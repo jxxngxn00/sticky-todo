@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
 from . import icons, resources
 from .autostart import Autostart
+from .hotkey import GlobalHotkey
 from .note_widget import NoteWidget, resolve_font_family
 from .paths import resolve_paths
 from .settings import Settings
@@ -73,6 +74,8 @@ def main() -> int:
         autostart.refresh()  # exe를 다른 폴더로 옮겼으면 자동 실행 경로도 고친다
 
     note = NoteWidget(store, settings, paths.settings_file, autostart=autostart)
+    note.hotkey = GlobalHotkey(note.summon)
+    app.aboutToQuit.connect(note.hotkey.unregister)
     app.aboutToQuit.connect(store.flush)
     app.aboutToQuit.connect(note.save_settings)
 
@@ -82,6 +85,7 @@ def main() -> int:
         tray.show()
         note.hide_to_tray = True  # ✕는 트레이로 숨기기
     note.show()
+    note.sync_hotkey()
 
     if result.status in (LoadStatus.RECOVERED, LoadStatus.RESET):
         QTimer.singleShot(0, lambda: QMessageBox.warning(note, "Sticky Todo", result.message))
