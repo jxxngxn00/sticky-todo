@@ -9,7 +9,7 @@ from PySide6.QtCore import QLockFile, QTimer, qInstallMessageHandler
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
 
-from . import icons
+from . import icons, resources
 from .autostart import Autostart
 from .note_widget import NoteWidget, resolve_font_family
 from .paths import resolve_paths
@@ -37,6 +37,8 @@ def main() -> int:
     app.setApplicationName("Sticky Todo")
     app.setQuitOnLastWindowClosed(False)
     app.setWindowIcon(icons.app_icon())
+    resources.load_bundled_fonts()  # Pretendard (설치 안 된 PC에서도)
+    resources.install_korean_translation(app)  # Qt 기본 창 한국어
 
     paths = resolve_paths()
     try:

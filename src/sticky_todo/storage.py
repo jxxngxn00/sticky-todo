@@ -844,12 +844,16 @@ class TodoStore(QObject):
             return
         self.backups_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
-        # 순번을 항상 붙여서 같은 순간에 두 번 저장해도 덮어쓰지 않고, 이름순 = 시간순이 되게
-        n = 0
+        # 순번을 항상 붙여서 같은 시각에 여러 번 저장해도 이름순 = 시간순이 되게.
+        # 빈 번호를 다시 쓰면 (오래된 백업을 지운 뒤) 새 백업이 가장 오래된 것처럼 정렬되므로
+        # 같은 시각에서 지금까지 쓴 가장 큰 번호 + 1을 쓴다.
+        used = [
+            int(f.stem.rsplit("-", 1)[1])
+            for f in self.backups_dir.glob(f"todos-{stamp}-*.json")
+            if f.stem.rsplit("-", 1)[1].isdigit()
+        ]
+        n = max(used, default=-1) + 1
         target = self.backups_dir / f"todos-{stamp}-{n:03d}.json"
-        while target.exists():
-            n += 1
-            target = self.backups_dir / f"todos-{stamp}-{n:03d}.json"
         shutil.copy2(self.todos_file, target)
         self._last_backup = now
         for old in self.list_backups()[MAX_BACKUPS:]:

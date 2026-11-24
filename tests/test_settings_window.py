@@ -101,3 +101,27 @@ def test_menu_opens_single_settings_window(note):
     note.open_settings_window()
     assert note._settings_win is first
     first.reject()
+
+
+def test_color_picker_uses_same_buttons(win):
+    from PySide6.QtWidgets import QColorDialog, QPushButton
+
+    from sticky_todo.settings_window import ColorPickerDialog
+
+    dlg = ColorPickerDialog("#FF9F0A", "강조 색", win)
+    assert dlg.picker.testOption(QColorDialog.ColorDialogOption.NoButtons)  # Qt OK/Cancel 숨김
+    texts = [
+        b.text()
+        for b in dlg.findChildren(QPushButton)
+        if b.isVisibleTo(dlg) and b.text() in ("취소", "확인")
+    ]
+    assert texts == ["취소", "확인"]
+    assert dlg.ok_btn.isDefault()
+    assert dlg.selected_color() == "#FF9F0A"
+    # 설정 창과 같은 순서: 취소가 확인 왼쪽, 둘 다 오른쪽 끝
+    for d in (dlg, win):
+        d.show()
+        d.adjustSize()
+        assert d.cancel_btn.x() < d.ok_btn.x()
+        assert d.ok_btn.geometry().right() > d.width() - 40
+    dlg.close()

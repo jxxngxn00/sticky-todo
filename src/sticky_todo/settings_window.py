@@ -34,6 +34,48 @@ if TYPE_CHECKING:
 PRESET_NAMES = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
 
 
+def dialog_buttons(
+    dialog: QDialog, left: QPushButton | None = None
+) -> tuple[QHBoxLayout, QPushButton, QPushButton]:
+    """설정 창과 색 선택 창이 함께 쓰는 아래쪽 버튼 줄: [왼쪽 버튼] ……… [취소] [확인]"""
+    cancel = QPushButton("취소")
+    cancel.clicked.connect(dialog.reject)
+    ok = QPushButton("확인")
+    ok.setDefault(True)
+    ok.clicked.connect(dialog.accept)
+    row = QHBoxLayout()
+    if left is not None:
+        row.addWidget(left)
+    row.addStretch(1)
+    row.addWidget(cancel)
+    row.addWidget(ok)
+    return row, cancel, ok
+
+
+class ColorPickerDialog(QDialog):
+    """Qt 색 선택 위젯 + 설정 창과 같은 '취소 / 확인' 버튼."""
+
+    def __init__(self, color: str, title: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.picker = QColorDialog(QColor(color), self)
+        # Qt 기본 OK/Cancel은 숨기고 창 안에 위젯으로 넣는다
+        self.picker.setOptions(
+            QColorDialog.ColorDialogOption.NoButtons
+            | QColorDialog.ColorDialogOption.DontUseNativeDialog
+        )
+        self.picker.setWindowFlags(Qt.WindowType.Widget)
+        if self.picker.layout() is not None:
+            self.picker.layout().setContentsMargins(0, 0, 0, 0)
+        buttons, self.cancel_btn, self.ok_btn = dialog_buttons(self)
+        root = QVBoxLayout(self)
+        root.addWidget(self.picker)
+        root.addLayout(buttons)
+
+    def selected_color(self) -> str:
+        return self.picker.currentColor().name().upper()
+
+
 class ColorButton(QPushButton):
     """누르면 컬러 피커가 열리는 색 견본 버튼."""
 
@@ -59,9 +101,9 @@ class ColorButton(QPushButton):
         )
 
     def _pick(self) -> None:
-        c = QColorDialog.getColor(QColor(self._color), self, self._title)
-        if c.isValid():
-            self.set_color(c.name())
+        dlg = ColorPickerDialog(self._color, self._title, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.set_color(dlg.selected_color())
             self.color_picked.emit(self._color)
 
 
@@ -93,16 +135,7 @@ class SettingsWindow(QDialog):
 
         self.reset_btn = QPushButton("기본값으로")
         self.reset_btn.clicked.connect(self.reset_defaults)
-        self.cancel_btn = QPushButton("취소")
-        self.cancel_btn.clicked.connect(self.reject)
-        self.ok_btn = QPushButton("확인")
-        self.ok_btn.setDefault(True)
-        self.ok_btn.clicked.connect(self.accept)
-        buttons = QHBoxLayout()
-        buttons.addWidget(self.reset_btn)
-        buttons.addStretch(1)
-        buttons.addWidget(self.cancel_btn)
-        buttons.addWidget(self.ok_btn)
+        buttons, self.cancel_btn, self.ok_btn = dialog_buttons(self, left=self.reset_btn)
 
         root = QVBoxLayout(self)
         root.addWidget(tabs)
