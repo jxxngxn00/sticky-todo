@@ -280,6 +280,8 @@ class TodoStore(QObject):
         status = Status(status)
         sort = SortKey(sort)
         needle = text.strip().casefold()
+        # 시간은 초 단위라 같은 초에 추가된 항목은 노트 순서(= 추가 순서)로 가른다
+        pos = {t.id: i for i, t in enumerate(self._todos)}
         result = [
             replace(t)
             for t in self._todos
@@ -287,16 +289,17 @@ class TodoStore(QObject):
             and (status is Status.ALL or t.done == (status is Status.DONE))
         ]
         if sort is SortKey.CREATED_DESC:
-            result.sort(key=lambda t: _ts(t.created_at), reverse=True)
+            result.sort(key=lambda t: (_ts(t.created_at), pos[t.id]), reverse=True)
         elif sort is SortKey.CREATED_ASC:
-            result.sort(key=lambda t: _ts(t.created_at))
+            result.sort(key=lambda t: (_ts(t.created_at), pos[t.id]))
         elif sort is SortKey.COMPLETED_DESC:
             # 완료 시간이 없는 항목은 맨 뒤로
             result.sort(
-                key=lambda t: (t.completed_at is not None, _ts(t.completed_at)), reverse=True
+                key=lambda t: (t.completed_at is not None, _ts(t.completed_at), pos[t.id]),
+                reverse=True,
             )
         elif sort is SortKey.ALPHA:
-            result.sort(key=lambda t: t.text.casefold())
+            result.sort(key=lambda t: (t.text.casefold(), pos[t.id]))
         return result
 
     def has_children(self, todo_id: str) -> bool:

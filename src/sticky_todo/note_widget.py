@@ -418,6 +418,7 @@ class TodoListView(QScrollArea):
     """노트 순서 그대로 할 일을 보여주고, 키보드·드래그 조작을 TodoStore로 넘긴다."""
 
     delete_done = Signal(int)
+    undo_requested = Signal()
 
     def __init__(self, store: TodoStore, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -534,6 +535,9 @@ class TodoListView(QScrollArea):
         return super().event(e)
 
     def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802
+        if e.matches(QKeySequence.StandardKey.Undo):
+            self.undo_requested.emit()
+            return
         sid = self.selected_id
         ids = [r.todo.id for r in self.rows]
         key = e.key()
@@ -747,8 +751,6 @@ class TodoInput(QLineEdit):
 
 
 class NoteWidget(QWidget):
-    open_manager = Signal()
-
     def __init__(
         self, store: TodoStore, settings: Settings, settings_path: Path, parent=None
     ) -> None:
@@ -767,6 +769,7 @@ class NoteWidget(QWidget):
         self._settings_timer.timeout.connect(self.save_settings)
         self._restoring = True
         self._settings_win = None
+        self._manager_win = None
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
         self._hover_timer.setInterval(400)
@@ -832,9 +835,11 @@ class NoteWidget(QWidget):
         b_lay.addLayout(grip_box)
         card_lay.addWidget(bottom)
 
-        undo = QShortcut(QKeySequence.StandardKey.Undo, self.list_view)
-        undo.setContext(Qt.ShortcutContext.WidgetShortcut)
-        undo.activated.connect(self.undo_delete)
+        manager = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
+        manager.setContext(Qt.ShortcutContext.WindowShortcut)
+        manager.activated.connect(self.open_manager_window)
+
+        self.list_view.undo_requested.connect(self.undo_delete)
 
         store.changed.connect(self._on_store_changed)
         store.save_failed.connect(lambda msg: self.show_toast(f"저장 실패: {msg}"))
@@ -1047,9 +1052,8 @@ class NoteWidget(QWidget):
         menu.addAction("마크다운 복사", self.copy_markdown)
         menu.addAction("마크다운 불러오기…", self.import_markdown_file)
         menu.addSeparator()
-        act = menu.addAction("전체 목록 보기", self.open_manager.emit)
+        act = menu.addAction("전체 목록 보기", self.open_manager_window)
         act.setShortcut(QKeySequence("Ctrl+Shift+L"))
-        act.setEnabled(False)  # 4단계에서 연결
         colors = menu.addMenu("색상")
         for key, label in PRESET_LABELS.items():
             a = colors.addAction(label, lambda k=key: self.apply_preset(k))
@@ -1075,6 +1079,25 @@ class NoteWidget(QWidget):
         self._settings_win.show()
         self._settings_win.raise_()
         self._settings_win.activateWindow()
+
+    def open_manager_window(self) -> None:
+        from .manager_window import ManagerWindow
+
+        if self._manager_win is None:
+            self._manager_win = ManagerWindow(
+                self.store, self.settings, on_settings_changed=self.schedule_settings_save
+            )
+            self._manager_win.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+            self._manager_win.destroyed.connect(self._forget_manager_window)
+        win = self._manager_win
+        if win.isMinimized():
+            win.showNormal()
+        win.show()
+        win.raise_()
+        win.activateWindow()
+
+    def _forget_manager_window(self) -> None:
+        self._manager_win = None
 
     def _forget_settings_window(self) -> None:
         self._settings_win = None
@@ -1179,6 +1202,8 @@ class NoteWidget(QWidget):
             self.show_toast(f"설정 저장 실패: {e}")
 
     def closeEvent(self, e) -> None:  # noqa: N802
+        if self._manager_win is not None:
+            self._manager_win.close()  # 관리 창 위치도 저장되도록 먼저 닫는다
         self.save_settings()
         self.store.flush()
         super().closeEvent(e)

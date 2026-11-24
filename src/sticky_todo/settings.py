@@ -81,6 +81,11 @@ SCHEMA: dict[str, Field] = {
     "window_y": Field(None, _opt_int),
     "window_w": Field(280, _int_range(160, 2000)),
     "window_h": Field(360, _int_range(120, 3000)),
+    # 전체 할 일 관리 창
+    "manager_x": Field(None, _opt_int),
+    "manager_y": Field(None, _opt_int),
+    "manager_w": Field(640, _int_range(480, 4000)),
+    "manager_h": Field(480, _int_range(320, 3000)),
 }
 
 

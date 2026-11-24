@@ -388,3 +388,12 @@ def test_missing_migration_is_error(monkeypatch):
     monkeypatch.setattr(storage, "MIGRATIONS", {})
     with pytest.raises(DataError):
         parse_todos({"version": 1, "todos": []})
+
+
+def test_sort_ties_use_add_order(store):
+    for name in ["첫째", "둘째", "셋째"]:
+        store.add(name)
+    for t in store._todos:
+        t.created_at = "2026-11-24T09:00:00+09:00"  # 같은 초
+    assert [t.text for t in store.query(sort=SortKey.CREATED_DESC)] == ["셋째", "둘째", "첫째"]
+    assert [t.text for t in store.query(sort=SortKey.CREATED_ASC)] == ["첫째", "둘째", "셋째"]

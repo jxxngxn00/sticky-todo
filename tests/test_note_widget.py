@@ -292,3 +292,12 @@ def test_title_bar_hover_mode(note):
     assert not note.title_bar.isVisible()
     note._update_title_visibility(True)
     assert note.title_bar.isVisible()
+
+
+def test_ctrl_z_on_list_restores(note, store):
+    store.add("A")
+    note.list_view.request_delete(store.todos()[0].id)
+    assert len(store) == 0
+    note.list_view.setFocus()
+    QTest.keyClick(note.list_view, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
+    assert len(store) == 1
