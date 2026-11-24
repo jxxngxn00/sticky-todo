@@ -7,8 +7,8 @@ from sticky_todo.settings import PRESETS, SCHEMA, Settings, validate
 
 def test_defaults():
     s = Settings()
-    assert s["check_style"] == "square"
-    assert s["font_family"] == "맑은 고딕"
+    assert s["check_style"] == "circle"
+    assert s["font_family"] == "Pretendard"
     assert s["font_size"] == 12
     assert s.invalid_keys == []
 
@@ -21,8 +21,8 @@ def test_defaults():
         ("font_size", 21, 12),
         ("font_size", True, 12),  # bool은 int로 취급하지 않음
         ("font_size", "14", 12),
-        ("check_style", "circle", "circle"),
-        ("check_style", "neon", "square"),
+        ("check_style", "square", "square"),
+        ("check_style", "neon", "circle"),
         ("bg_color", "#abcdef", "#ABCDEF"),
         ("bg_color", "red", SCHEMA["bg_color"].default),
         ("bg_color", "#abc", SCHEMA["bg_color"].default),
@@ -45,11 +45,11 @@ def test_validate(key, value, expected):
 def test_load_partial_invalid(tmp_path):
     p = tmp_path / "settings.json"
     p.write_text(
-        json.dumps({"font_size": 99, "check_style": "circle", "unknown": 1}), encoding="utf-8"
+        json.dumps({"font_size": 99, "check_style": "square", "unknown": 1}), encoding="utf-8"
     )
     s = Settings.load(p)
     assert s["font_size"] == 12
-    assert s["check_style"] == "circle"
+    assert s["check_style"] == "square"
     assert s.invalid_keys == ["font_size"]
     assert "unknown" not in s.as_dict()
 
@@ -81,6 +81,6 @@ def test_save_roundtrip(tmp_path):
 
 def test_set_returns_validated():
     s = Settings()
-    assert s.set("corner_radius", 100) == 10
+    assert s.set("corner_radius", 100) == 14
     with pytest.raises(KeyError):
         s.set("nope", 1)

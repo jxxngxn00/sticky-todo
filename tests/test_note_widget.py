@@ -197,9 +197,16 @@ def test_preset_restyles_existing_widgets(note):
     assert mint["title_color"].upper() in note.card.styleSheet()
     assert mint["bg_color"].upper() in note.card.styleSheet()
     assert note.card.graphicsEffect() is None  # 그림을 캐시하는 효과를 쓰지 않음
-    for w in (note.title_bar.label, note.input, note.count_label, note.list_view.empty_label):
+    size = note.settings["font_size"]
+    expected = {
+        note.title_bar.label: size + 3,  # 제목은 크게
+        note.input: size,
+        note.list_view.empty_label: size,
+        note.count_label: size - 2,  # 개수는 작게
+    }
+    for w, pt in expected.items():
         w.ensurePolished()
-        assert w.font().pointSize() == note.settings["font_size"]
+        assert w.font().pointSize() == pt
 
 
 def test_menu_and_dialogs_do_not_inherit_note_colors(note):

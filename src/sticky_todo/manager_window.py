@@ -12,11 +12,13 @@ from typing import TYPE_CHECKING, Any
 
 from PySide6.QtCore import (
     QAbstractTableModel,
+    QEvent,
     QItemSelection,
     QItemSelectionModel,
     QModelIndex,
     QPoint,
     QRect,
+    QRectF,
     Qt,
     QTimer,
     Signal,
@@ -27,6 +29,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QMouseEvent,
     QPainter,
+    QPen,
     QShortcut,
 )
 from PySide6.QtWidgets import (
@@ -50,7 +53,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import markdown_io
+from . import icons, markdown_io
+from .note_widget import CheckButton
 from .paths import default_export_dir
 from .storage import SortKey, Status, Todo, TodoStore
 
@@ -209,6 +213,61 @@ class TextDelegate(QStyledItemDelegate):
         painter.restore()
 
 
+# ---------------------------------------------------------------- 체크 칸 (노트와 같은 모양)
+
+
+class CheckDelegate(QStyledItemDelegate):
+    """완료 칸은 동그라미, 선택 칸은 둥근 네모. 채움은 강조색."""
+
+    def __init__(self, shape: str, parent=None) -> None:
+        super().__init__(parent)
+        self.shape = shape
+        self.accent = QColor("#0A84FF")
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
+        opt = QStyleOptionViewItem(option)
+        self.initStyleOption(opt, index)
+        opt.features &= ~QStyleOptionViewItem.ViewItemFeature.HasCheckIndicator
+        opt.text = ""
+        widget = opt.widget
+        widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, widget)
+
+        checked = index.data(Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
+        side = 18
+        r = QRectF(
+            opt.rect.center().x() - side / 2 + 1, opt.rect.center().y() - side / 2 + 1, side, side
+        )
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if checked:
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self.accent)
+        else:
+            ring = QColor(opt.palette.color(opt.palette.ColorRole.Text))
+            ring.setAlphaF(0.35)
+            painter.setPen(QPen(ring, 1.5))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            r = r.adjusted(0.75, 0.75, -0.75, -0.75)
+        if self.shape == "circle":
+            painter.drawEllipse(r)
+        else:
+            painter.drawRoundedRect(r, 5, 5)
+        if checked:
+            CheckButton._draw_check(painter, r, QColor("#FFFFFF"))
+        painter.restore()
+
+    def editorEvent(self, event, model, option, index) -> bool:  # noqa: N802
+        if self.shape != "circle":
+            return False  # 선택 칸은 표(TodoTable)가 직접 처리
+        t = event.type()
+        if t == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+            checked = index.data(Qt.ItemDataRole.CheckStateRole) == Qt.CheckState.Checked
+            new = Qt.CheckState.Unchecked if checked else Qt.CheckState.Checked
+            model.setData(index, new.value, Qt.ItemDataRole.CheckStateRole)
+            return True
+        return t in (QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick)
+
+
 # ---------------------------------------------------------------- 표
 
 
@@ -259,11 +318,17 @@ class ManagerWindow(QWidget):
         self.search.setPlaceholderText("검색 (Ctrl+F)")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._on_search)
+        self._search_icon = self.search.addAction(
+            icons.icon("search", "#8E8E93"), QLineEdit.ActionPosition.LeadingPosition
+        )
 
         self.status_group = QButtonGroup(self)
         self.status_buttons: dict[Status, QPushButton] = {}
-        status_box = QHBoxLayout()
-        status_box.setSpacing(4)
+        self.segmented = QFrame()
+        self.segmented.setObjectName("segmented")
+        status_box = QHBoxLayout(self.segmented)
+        status_box.setContentsMargins(2, 2, 2, 2)
+        status_box.setSpacing(2)
         for i, (status, _) in enumerate(STATUS_OPTIONS):
             b = QPushButton()
             b.setCheckable(True)
@@ -281,7 +346,7 @@ class ManagerWindow(QWidget):
 
         top = QHBoxLayout()
         top.addWidget(self.search, 1)
-        top.addLayout(status_box)
+        top.addWidget(self.segmented)
         top.addWidget(self.sort_combo)
 
         # --- 표
@@ -289,6 +354,10 @@ class ManagerWindow(QWidget):
         self.table = TodoTable()
         self.table.setModel(self.model)
         self.table.setItemDelegateForColumn(COL_TEXT, TextDelegate(self.table))
+        self.select_delegate = CheckDelegate("square", self.table)
+        self.done_delegate = CheckDelegate("circle", self.table)
+        self.table.setItemDelegateForColumn(COL_SELECT, self.select_delegate)
+        self.table.setItemDelegateForColumn(COL_DONE, self.done_delegate)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(
@@ -297,7 +366,9 @@ class ManagerWindow(QWidget):
         )
         self.table.verticalHeader().hide()
         self.table.setShowGrid(False)
-        self.table.setAlternatingRowColors(True)
+        self.table.setAlternatingRowColors(False)
+        self.table.verticalHeader().setDefaultSectionSize(36)
+        self.table.setFrameShape(QFrame.Shape.NoFrame)
         self.table.setWordWrap(False)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(COL_SELECT, QHeaderView.ResizeMode.Fixed)
@@ -318,13 +389,6 @@ class ManagerWindow(QWidget):
         # --- 알림
         self.toast = QFrame()
         self.toast.setObjectName("managerToast")
-        self.toast.setStyleSheet(
-            "#managerToast { background: palette(highlight); border-radius: 6px; }"
-            "#managerToast QLabel, #managerToast QToolButton {"
-            " color: palette(highlighted-text); }"
-            "#managerToast QToolButton { border: none; font-weight: bold;"
-            " text-decoration: underline; }"
-        )
         t_lay = QHBoxLayout(self.toast)
         t_lay.setContentsMargins(10, 4, 6, 4)
         self.toast_label = QLabel()
@@ -346,6 +410,7 @@ class ManagerWindow(QWidget):
         self.export_btn = QPushButton("마크다운 내보내기")
         self.export_btn.clicked.connect(self.export_selected)
         self.delete_btn = QPushButton("삭제")
+        self.delete_btn.setObjectName("danger")
         self.delete_btn.clicked.connect(self.delete_selected)
         bottom = QHBoxLayout()
         bottom.addWidget(self.selection_label, 1)
@@ -369,8 +434,57 @@ class ManagerWindow(QWidget):
         )
 
         store.changed.connect(self.refresh)
+        self.apply_style()
         self._restore_geometry()
         self.refresh()
+
+    # ------------------------------------------------------------ 모양 (iOS 느낌)
+
+    def apply_style(self) -> None:
+        accent = QColor(self.settings["accent_color"])
+        self.select_delegate.accent = accent
+        self.done_delegate.accent = accent
+        self.table.viewport().update()
+        a = f"rgba({accent.red()}, {accent.green()}, {accent.blue()}"
+        dark = self.palette().color(self.backgroundRole()).lightness() < 128
+        seg_on = "#636366" if dark else "#FFFFFF"
+        fill = "rgba(118, 118, 128, 0.24)" if dark else "rgba(118, 118, 128, 0.12)"
+        line = "rgba(128, 128, 128, 0.18)"
+        self.setStyleSheet(f"""
+            QLineEdit {{
+                background: {fill}; border: none; border-radius: 10px; padding: 6px 8px;
+                selection-background-color: {a}, 0.4);
+            }}
+            #segmented {{ background: {fill}; border-radius: 9px; }}
+            #segmented QPushButton {{
+                border: none; background: transparent; border-radius: 7px; padding: 5px 12px;
+            }}
+            #segmented QPushButton:checked {{ background: {seg_on}; font-weight: 600; }}
+            QComboBox {{ background: {fill}; border: none; border-radius: 9px; padding: 5px 10px; }}
+            QComboBox::drop-down {{ border: none; width: 18px; }}
+            QTableView {{
+                border: none; background: transparent; outline: 0;
+                selection-background-color: {a}, 0.22); selection-color: palette(text);
+            }}
+            QTableView::item {{ border-bottom: 1px solid {line}; padding: 0 4px; }}
+            QTableView::item:selected {{ background: {a}, 0.20); color: palette(text); }}
+            QHeaderView::section {{
+                background: transparent; border: none; border-bottom: 1px solid {line};
+                padding: 6px 4px; font-weight: 600; color: palette(placeholder-text);
+            }}
+            QPushButton {{
+                background: {fill}; border: none; border-radius: 9px; padding: 7px 14px;
+                color: {a}, 1.0); font-weight: 600;
+            }}
+            QPushButton:disabled {{ color: palette(placeholder-text); }}
+            QPushButton#danger:enabled {{ color: #FF3B30; }}
+            #segmented QPushButton {{ color: palette(text); font-weight: 400; }}
+            #managerToast {{ background: rgba(28, 28, 30, 0.92); border-radius: 12px; }}
+            #managerToast QLabel {{ color: #FFFFFF; }}
+            #managerToast QToolButton {{
+                color: {a}, 1.0); border: none; font-weight: 700; background: transparent;
+            }}
+        """)
 
     # ------------------------------------------------------------ 갱신
 

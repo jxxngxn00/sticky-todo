@@ -279,3 +279,18 @@ def test_note_opens_single_manager(store, settings, tmp_path):
     note._settings_timer.stop()
     note.hide()
     note.deleteLater()
+
+
+def test_click_done_circle_toggles(win, store):
+    ids = fill(store)
+    row = texts(win).index("C 회의")
+    rect = win.table.visualRect(win.model.index(row, COL_DONE))
+    QTest.mouseClick(win.table.viewport(), Qt.MouseButton.LeftButton, pos=rect.center())
+    assert store.get(ids["C"]).done
+    assert win.selected_ids() == []  # 완료 칸 클릭은 선택을 바꾸지 않음
+
+
+def test_accent_follows_settings(win, settings):
+    settings.apply_preset("mint")
+    win.apply_style()
+    assert win.done_delegate.accent.name().upper() == settings["accent_color"]

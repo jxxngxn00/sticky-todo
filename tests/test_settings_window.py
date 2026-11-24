@@ -37,7 +37,7 @@ def click_radio(win, key, value):
 
 def test_loads_current_values(note, win):
     group, values = win._radios["check_style"]
-    assert values[group.checkedId()] == "square"
+    assert values[group.checkedId()] == "circle"
     assert win.font_size.value() == 12
     assert win.sticky_group.isVisibleTo(win)
 

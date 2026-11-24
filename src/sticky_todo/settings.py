@@ -11,15 +11,36 @@ from typing import Any
 
 from .fileio import atomic_write_text
 
-DEFAULT_FONT = "맑은 고딕"
+DEFAULT_FONT = "Pretendard"  # 없으면 맑은 고딕으로 대체 (note_widget.resolve_font_family)
 
-# 스티키 노트 프리셋: (배경, 제목 바, 글자)
+# 노트 색 프리셋 (iOS 시스템 색 기반의 부드러운 톤)
 PRESETS: dict[str, dict[str, str]] = {
-    "yellow": {"bg_color": "#FFF59D", "title_color": "#FFEB3B", "text_color": "#3E2723"},
-    "pink": {"bg_color": "#F8BBD0", "title_color": "#F48FB1", "text_color": "#4A1C2C"},
-    "sky": {"bg_color": "#B3E5FC", "title_color": "#81D4FA", "text_color": "#0D2B3E"},
-    "mint": {"bg_color": "#C8F7DC", "title_color": "#9EEBC0", "text_color": "#123524"},
+    "yellow": {
+        "bg_color": "#FFF8DC",
+        "title_color": "#FFF8DC",
+        "text_color": "#1C1C1E",
+        "accent_color": "#FF9F0A",
+    },
+    "pink": {
+        "bg_color": "#FFEDF2",
+        "title_color": "#FFEDF2",
+        "text_color": "#1C1C1E",
+        "accent_color": "#FF375F",
+    },
+    "sky": {
+        "bg_color": "#EAF4FF",
+        "title_color": "#EAF4FF",
+        "text_color": "#1C1C1E",
+        "accent_color": "#0A84FF",
+    },
+    "mint": {
+        "bg_color": "#E6F8EE",
+        "title_color": "#E6F8EE",
+        "text_color": "#1C1C1E",
+        "accent_color": "#30B860",
+    },
 }
+
 _COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -67,11 +88,12 @@ SCHEMA: dict[str, Field] = {
     "bg_color": Field(_yellow["bg_color"], _color, str.upper),
     "title_color": Field(_yellow["title_color"], _color, str.upper),
     "text_color": Field(_yellow["text_color"], _color, str.upper),
-    "corner_radius": Field(10, _int_range(0, 24)),
+    "accent_color": Field(_yellow["accent_color"], _color, str.upper),  # 체크·추가 버튼
+    "corner_radius": Field(14, _int_range(0, 24)),
     "shadow": Field(True, _bool),
     "title_bar_mode": Field("always", _choice("always", "hover")),
     # 목록 동작
-    "check_style": Field("square", _choice("square", "circle", "bullet")),
+    "check_style": Field("circle", _choice("square", "circle", "bullet")),
     "done_style": Field("strike", _choice("strike", "dim", "bottom", "hide")),
     "line_spacing": Field("normal", _choice("compact", "normal", "relaxed")),
     # 노트 창
@@ -167,6 +189,7 @@ APPEARANCE_KEYS = [
     "bg_color",
     "title_color",
     "text_color",
+    "accent_color",
     "corner_radius",
     "shadow",
     "title_bar_mode",

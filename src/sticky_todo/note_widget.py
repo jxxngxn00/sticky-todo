@@ -14,6 +14,7 @@ from PySide6.QtGui import (
     QFont,
     QFontDatabase,
     QGuiApplication,
+    QIcon,
     QKeyEvent,
     QKeySequence,
     QMouseEvent,
@@ -40,17 +41,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import markdown_io
+from . import icons, markdown_io
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
 from .storage import Todo, TodoStore
 
 INDENT_PX = 20
 MIME_TODO = "application/x-sticky-todo-id"
-FALLBACK_FONT = "Malgun Gothic"
+FALLBACK_FONTS = ["Pretendard", "맑은 고딕", "Malgun Gothic"]
 PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
 TOAST_MS = 5000
-SHADOW_PX = 10
+SHADOW_PX = 14
 
 
 def _rgba(color: str, alpha: float) -> str:
@@ -58,8 +59,22 @@ def _rgba(color: str, alpha: float) -> str:
     return f"rgba({c.red()}, {c.green()}, {c.blue()}, {alpha:.3f})"
 
 
+def _mix(a: str, b: str, t: float) -> str:
+    """a와 b를 t 비율로 섞은 불투명 색 (아이콘처럼 알파를 못 쓰는 곳용)."""
+    ca, cb = QColor(a), QColor(b)
+    r = round(ca.red() * t + cb.red() * (1 - t))
+    g = round(ca.green() * t + cb.green() * (1 - t))
+    bl = round(ca.blue() * t + cb.blue() * (1 - t))
+    return f"#{r:02X}{g:02X}{bl:02X}"
+
+
 def resolve_font_family(name: str) -> str:
-    return name if name in QFontDatabase.families() else FALLBACK_FONT
+    """설치된 글꼴이면 그대로, 아니면 Pretendard → 맑은 고딕 순으로 대체."""
+    families = set(QFontDatabase.families())
+    for candidate in [name, *FALLBACK_FONTS]:
+        if candidate in families:
+            return candidate
+    return FALLBACK_FONTS[-1]
 
 
 # ---------------------------------------------------------------- 드래그 위치 계산
@@ -155,39 +170,45 @@ class CheckButton(QAbstractButton):
         self.setCheckable(True)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.shape = "square"  # square / circle / bullet
-        self.color = QColor("#333333")
-        self.fill_text = QColor("#FFFFFF")
+        self.shape = "circle"  # square / circle / bullet
+        self.color = QColor("#1C1C1E")  # 글자색 (빈 테두리는 이 색을 옅게)
+        self.accent = QColor("#FF9F0A")  # 완료 채움색
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(18, 18)
+        return QSize(20, 20)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        side = min(self.width(), self.height()) - 4
+        side = min(self.width(), self.height()) - 2
         r = QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
-        pen = QPen(self.color, 1.6)
         checked = self.isChecked()
+        ring = QColor(self.color)
+        ring.setAlphaF(0.30)
 
         if self.shape == "bullet":
             p.setPen(Qt.PenStyle.NoPen)
             if checked:
-                self._draw_check(p, r, self.color)
+                self._draw_check(p, r, self.accent)
             else:
-                p.setBrush(self.color)
-                d = side * 0.32
+                p.setBrush(ring)
+                d = side * 0.34
                 p.drawEllipse(r.center(), d / 2, d / 2)
             return
 
-        p.setPen(pen)
-        p.setBrush(self.color if checked else Qt.BrushStyle.NoBrush)
+        if checked:
+            p.setPen(Qt.PenStyle.NoPen)
+            p.setBrush(self.accent)
+        else:
+            p.setPen(QPen(ring, 1.5))
+            p.setBrush(Qt.BrushStyle.NoBrush)
+            r = r.adjusted(0.75, 0.75, -0.75, -0.75)
         if self.shape == "circle":
             p.drawEllipse(r)
         else:
-            p.drawRoundedRect(r, 3, 3)
+            p.drawRoundedRect(r, 5, 5)
         if checked:
-            self._draw_check(p, r, self.fill_text)
+            self._draw_check(p, r, QColor("#FFFFFF"))
 
     @staticmethod
     def _draw_check(p: QPainter, r: QRectF, color: QColor) -> None:
@@ -271,9 +292,9 @@ class TodoRow(QWidget):
         self.check = CheckButton(self)
         self.check.shape = style["check_style"]
         self.check.color = QColor(style["text_color"])
-        self.check.fill_text = QColor(style["bg_color"])
+        self.check.accent = QColor(style["accent_color"])
         self.check.setChecked(todo.done)
-        self.check.setFixedSize(18, 18)
+        self.check.setFixedSize(20, 20)
         self.check.toggled.connect(lambda on: self.toggled.emit(self.todo.id, on))
         lay.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -290,7 +311,10 @@ class TodoRow(QWidget):
 
         self.delete_btn = QToolButton(self)
         self.delete_btn.setObjectName("rowDelete")
-        self.delete_btn.setText("✕")
+        self.delete_btn.setIcon(
+            icons.icon("remove", _mix(style["text_color"], style["bg_color"], 0.28), 16)
+        )
+        self.delete_btn.setIconSize(QSize(16, 16))
         self.delete_btn.setToolTip("삭제")
         self.delete_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -652,17 +676,35 @@ class TitleBar(QWidget):
         lay.addWidget(self.label, 1)
         lay.addWidget(self.editor, 1)
 
-        self.pin_btn = self._button("📌", "항상 위에 고정")
+        self.pin_btn = self._button("항상 위에 고정")
         self.pin_btn.setCheckable(True)
-        self.menu_btn = self._button("☰", "메뉴")
-        self.close_btn = self._button("✕", "닫기")
+        self.pin_btn.toggled.connect(lambda _: self._paint_icons())
+        self.menu_btn = self._button("메뉴")
+        self.close_btn = self._button("닫기")
         for b in (self.pin_btn, self.menu_btn, self.close_btn):
             lay.addWidget(b)
+        self._colors = ("#1C1C1E", "#FF9F0A", "#FFFFFF")
+        self._paint_icons()
 
-    def _button(self, text: str, tip: str) -> QToolButton:
+    def set_colors(self, text: str, accent: str, bg: str) -> None:
+        self._colors = (text, accent, bg)
+        self._paint_icons()
+
+    def _paint_icons(self) -> None:
+        text, accent, bg = self._colors
+        soft = _mix(text, bg, 0.55)
+        if self.pin_btn.isChecked():
+            self.pin_btn.setIcon(icons.icon("pin_fill", accent))
+        else:
+            self.pin_btn.setIcon(icons.icon("pin", soft))
+        self.menu_btn.setIcon(icons.icon("more", soft))
+        self.close_btn.setIcon(icons.icon("close", soft))
+
+    def _button(self, tip: str) -> QToolButton:
         b = QToolButton(self)
         b.setObjectName("titleButton")
-        b.setText(text)
+        b.setIconSize(QSize(18, 18))
+        b.setFixedSize(28, 28)
         b.setToolTip(tip)
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -724,6 +766,12 @@ class TodoInput(QLineEdit):
         self.setMaxLength(500)
         self.setMinimumWidth(60)
         self.returnPressed.connect(self._submit)
+        self._colors = ("#1C1C1E", "#FF9F0A")
+        self._lead = self.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition)
+        self._update_look()
+
+    def set_colors(self, text: str, accent: str) -> None:
+        self._colors = (text, accent)
         self._update_look()
 
     def set_level(self, level: int) -> None:
@@ -731,8 +779,14 @@ class TodoInput(QLineEdit):
         self._update_look()
 
     def _update_look(self) -> None:
+        text, accent = self._colors
         self.setTextMargins(self.level * INDENT_PX, 0, 0, 0)
-        self.setPlaceholderText("↳ 하위 할 일 추가" if self.level else "할 일 추가 (Enter)")
+        if self.level:
+            self._lead.setIcon(icons.icon("subtask", accent))
+            self.setPlaceholderText("하위 할 일")
+        else:
+            self._lead.setIcon(icons.icon("add", accent))
+            self.setPlaceholderText("새로운 할 일")
 
     def _submit(self) -> None:
         text = " ".join(self.text().split())
@@ -864,6 +918,7 @@ class NoteWidget(QWidget):
             "title": s["title_color"],
             "text": s["text_color"],
             "solid": s["bg_color"],
+            "accent": s["accent_color"],
             "border": "none",
             "radius": s["corner_radius"],
             "shadow": s["shadow"],
@@ -880,9 +935,12 @@ class NoteWidget(QWidget):
             "done_style": s["done_style"],
             "text_color": pal["text"],
             "bg_color": pal["solid"],
+            "accent_color": pal["accent"],
         }
         self.title_bar.set_title(s["title"])
         self._update_title_visibility()
+        if self._manager_win is not None:
+            self._manager_win.apply_style()  # 강조색을 관리 창에도
         self._on_store_changed()
 
     def _apply_style(self) -> None:
@@ -893,60 +951,60 @@ class NoteWidget(QWidget):
         self.setFont(font)
 
         pal = self.note_palette()
-        card, title, text, solid = pal["card"], pal["title"], pal["text"], pal["solid"]
+        card, title, text = pal["card"], pal["title"], pal["text"]
+        accent = pal["accent"]
         r = pal["radius"]
-        field_base = "#FFFFFF" if text != "#FFFFFF" else "#000000"  # 입력창 바탕
+        size = s["font_size"]
+        self.title_bar.set_colors(text, accent, title)
+        self.input.set_colors(text, accent)
         # 카드 안쪽에만 적용한다. 노트 창 전체에 걸면 메뉴·알림창까지 노트 글자색을 물려받아
         # 다크모드(검은 배경)에서 글자가 안 보인다.
         self.card.setStyleSheet(f"""
             QWidget {{
-                color: {text}; font-family: "{family}"; font-size: {s["font_size"]}pt;
+                color: {text}; font-family: "{family}"; font-size: {size}pt;
             }}
             #card {{ background: {card}; border-radius: {r}px; border: {pal["border"]}; }}
             #titleBar {{
                 background: {title};
                 border-top-left-radius: {r}px; border-top-right-radius: {r}px;
             }}
-            #titleLabel {{ font-weight: bold; }}
-            #titleButton {{
-                border: none; background: transparent; padding: 2px 5px; border-radius: 4px;
-            }}
-            #titleButton:hover {{ background: {_rgba(text, 0.12)}; }}
-            #titleButton:checked {{ background: {_rgba(text, 0.20)}; }}
+            #titleLabel {{ font-size: {size + 3}pt; font-weight: 700; }}
+            #titleButton {{ border: none; background: transparent; border-radius: 14px; }}
+            #titleButton:hover {{ background: {_rgba(text, 0.08)}; }}
+            #titleButton:checked {{ background: {_rgba(accent, 0.14)}; }}
             #todoList, #rowContainer, #bottomBar {{ background: transparent; }}
             #todoList > QWidget > QWidget {{ background: transparent; }}
-            #row {{ border-radius: 4px; }}
-            #row:hover {{ background: {_rgba(text, 0.07)}; }}
-            #row[selected="true"] {{ background: {_rgba(text, 0.14)}; }}
-            #row QLabel[dim="true"] {{ color: {_rgba(text, 0.45)}; }}
+            #row {{ border-radius: 10px; }}
+            #row:hover {{ background: {_rgba(text, 0.05)}; }}
+            #row[selected="true"] {{ background: {_rgba(accent, 0.14)}; }}
+            #row QLabel[dim="true"] {{ color: {_rgba(text, 0.38)}; }}
             #row QLabel[strike="true"] {{ text-decoration: line-through; }}
-            #rowDelete {{ border: none; background: transparent; color: {_rgba(text, 0.5)}; }}
-            #rowDelete:hover {{ color: #E53935; }}
-            #emptyLabel {{ color: {_rgba(text, 0.45)}; padding: 20px; }}
-            #dropIndicator {{ background: {text}; }}
+            #rowDelete {{ border: none; background: transparent; }}
+            #emptyLabel {{ color: {_rgba(text, 0.35)}; padding: 24px; }}
+            #dropIndicator {{ background: {accent}; border-radius: 1px; }}
             QLineEdit {{
-                background: {_rgba(field_base, 0.45)}; border: 1px solid {_rgba(text, 0.2)};
-                border-radius: 4px; padding: 3px 6px;
-                selection-background-color: {_rgba(text, 0.3)};
+                background: {_rgba("#767680", 0.12)}; border: none; border-radius: 10px;
+                padding: 5px 8px; selection-background-color: {_rgba(accent, 0.35)};
             }}
-            #todoInput {{ background: {_rgba(field_base, 0.30)}; }}
-            #countLabel {{ color: {_rgba(text, 0.6)}; }}
-            #toast {{ background: {_rgba(text, 0.85)}; }}
-            #toast QLabel {{ color: {solid}; }}
+            #todoInput {{ padding: 7px 6px; }}
+            #countLabel {{ color: {_rgba(text, 0.45)}; font-size: {max(size - 2, 9)}pt; }}
+            #toast {{
+                background: rgba(28, 28, 30, 0.88); border-radius: 12px; margin: 0 8px 6px 8px;
+            }}
+            #toast QLabel {{ color: #FFFFFF; }}
             #toastButton {{
-                border: none; background: transparent; color: {solid};
-                font-weight: bold; text-decoration: underline;
+                border: none; background: transparent; color: {accent}; font-weight: 700;
             }}
-            QScrollBar:vertical {{ background: transparent; width: 8px; margin: 2px; }}
+            QScrollBar:vertical {{ background: transparent; width: 6px; margin: 4px 1px; }}
             QScrollBar::handle:vertical {{
-                background: {_rgba(text, 0.25)}; border-radius: 3px; min-height: 24px;
+                background: {_rgba(text, 0.18)}; border-radius: 3px; min-height: 24px;
             }}
             QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
             QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
             QSizeGrip {{ width: 14px; height: 14px; }}
             QToolTip {{
-                color: {text}; background: {solid}; border: 1px solid {_rgba(text, 0.3)};
-                padding: 2px 4px;
+                color: #FFFFFF; background: rgba(28, 28, 30, 0.92); border: none;
+                border-radius: 6px; padding: 4px 8px;
             }}
         """)
 
@@ -968,7 +1026,7 @@ class NoteWidget(QWidget):
         radius = pal["radius"]
         # 바깥에서 안쪽으로 옅은 둥근 사각형을 겹쳐 그려 부드러운 그림자를 만든다
         for i in range(SHADOW_PX, 0, -1):
-            p.setBrush(QColor(0, 0, 0, 6))
+            p.setBrush(QColor(0, 0, 0, 4))
             r = rect.adjusted(-i, -i + 2, i, i + 2)
             p.drawRoundedRect(r, radius + i, radius + i)
 

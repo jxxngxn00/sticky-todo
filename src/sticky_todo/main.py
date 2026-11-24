@@ -5,9 +5,10 @@ from __future__ import annotations
 import sys
 
 from PySide6.QtCore import QLockFile, QTimer, qInstallMessageHandler
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from .note_widget import NoteWidget
+from .note_widget import NoteWidget, resolve_font_family
 from .paths import resolve_paths
 from .settings import Settings
 from .storage import LoadStatus, TodoStore, UnsupportedVersionError
@@ -47,6 +48,7 @@ def main() -> int:
         return 0
 
     settings = Settings.load(paths.settings_file)
+    app.setFont(QFont(resolve_font_family(settings["font_family"]), 10))
     store = TodoStore(paths.todos_file, paths.backups_dir, parent=app)
     try:
         result = store.load()

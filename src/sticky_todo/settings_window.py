@@ -172,7 +172,12 @@ class SettingsWindow(QDialog):
 
         colors = QHBoxLayout()
         self.color_buttons: dict[str, ColorButton] = {}
-        for key, name in (("bg_color", "배경"), ("title_color", "제목 바"), ("text_color", "글자")):
+        for key, name in (
+            ("bg_color", "배경"),
+            ("title_color", "제목 바"),
+            ("text_color", "글자"),
+            ("accent_color", "강조"),
+        ):
             colors.addWidget(QLabel(name))
             cb = ColorButton(f"{name} 색")
             cb.color_picked.connect(lambda c, k=key: self.change(k, c))
