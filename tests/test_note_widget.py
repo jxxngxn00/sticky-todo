@@ -308,3 +308,30 @@ def test_ctrl_z_on_list_restores(note, store):
     note.list_view.setFocus()
     QTest.keyClick(note.list_view, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
     assert len(store) == 1
+
+
+def test_enter_commits_and_does_not_reopen(note, store):
+    store.add("A")
+    store.add("B")
+    note.list_view.select(store.todos()[1].id)
+    row = note.list_view.rows[1]
+    row.begin_edit()
+    row.editor.setText("B 수정")
+    QTest.keyClick(row.editor, Qt.Key.Key_Return)
+    assert store.todos()[1].text == "B 수정"
+    assert not any(r.editing for r in note.list_view.rows)  # 다시 열리지 않음
+
+
+def test_double_click_event_is_consumed(note, store):
+    store.add("A")
+    row = note.list_view.rows[0]
+    QTest.mouseDClick(row.label, Qt.MouseButton.LeftButton)
+    assert row.editing
+
+
+def test_shadow_toggle_keeps_note_size(note):
+    note.resize(300, 300)
+    before = note.layout().contentsMargins().left()
+    note.settings.set("shadow", False)
+    note.apply_settings()
+    assert note.layout().contentsMargins().left() == before

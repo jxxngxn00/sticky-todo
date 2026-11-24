@@ -455,6 +455,10 @@ class ManagerWindow(QWidget):
                 background: {fill}; border: none; border-radius: 10px; padding: 6px 8px;
                 selection-background-color: {a}, 0.4);
             }}
+            QTableView QLineEdit {{
+                background: palette(base); border: 1.5px solid {a}, 1.0); border-radius: 6px;
+                padding: 0 4px;
+            }}
             #segmented {{ background: {fill}; border-radius: 9px; }}
             #segmented QPushButton {{
                 border: none; background: transparent; border-radius: 7px; padding: 5px 12px;

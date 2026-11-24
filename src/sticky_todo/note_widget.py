@@ -265,6 +265,7 @@ class TodoRow(QWidget):
     clicked = Signal(str)
     drag_requested = Signal(str, QPoint)
     indent_requested = Signal(str, int)  # 편집 중 Tab / Shift+Tab
+    edit_closed = Signal()  # Enter / Esc로 편집을 마침
 
     def __init__(
         self,
@@ -362,7 +363,13 @@ class TodoRow(QWidget):
             key = event.key()
             if key == Qt.Key.Key_Escape:
                 self.finish_edit(commit=False)
-                self.parentWidget().setFocus()
+                self.edit_closed.emit()
+                return True
+            if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                # 입력칸은 Enter를 부모로 흘려보내는데, 목록은 Enter를 '수정 시작'으로
+                # 받아서 편집이 다시 열린다. 여기서 끝낸다.
+                self.finish_edit(commit=True)
+                self.edit_closed.emit()
                 return True
             if key in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
                 step = -1 if key == Qt.Key.Key_Backtab else 1
@@ -406,6 +413,10 @@ class TodoRow(QWidget):
     def mouseDoubleClickEvent(self, e: QMouseEvent) -> None:  # noqa: N802
         if e.button() == Qt.MouseButton.LeftButton:
             self.begin_edit()
+            # 이벤트를 여기서 끝낸다. 부모(목록)까지 올라가면 Qt가 목록에 포커스를 줘서
+            # 방금 연 편집칸이 포커스를 잃고 바로 닫힌다.
+            e.accept()
+            return
         super().mouseDoubleClickEvent(e)
 
 
@@ -495,6 +506,7 @@ class TodoListView(QScrollArea):
             row.clicked.connect(self.select)
             row.drag_requested.connect(self._start_drag)
             row.indent_requested.connect(self._on_editor_indent)
+            row.edit_closed.connect(self.setFocus)  # 바로 방향키로 이동할 수 있게
             self._layout.insertWidget(i, row)
             self.rows.append(row)
         self.empty_label.setText("완료한 할 일만 있어요" if todos else "할 일이 없어요")
@@ -747,6 +759,8 @@ class TitleBar(QWidget):
             self.editor.show()
             self.editor.setFocus()
             self.editor.selectAll()
+            e.accept()
+            return
         super().mouseDoubleClickEvent(e)
 
 
@@ -873,21 +887,20 @@ class NoteWidget(QWidget):
         bottom = QWidget(self.card)
         bottom.setObjectName("bottomBar")
         b_lay = QHBoxLayout(bottom)
-        b_lay.setContentsMargins(8, 4, 0, 0)
-        b_lay.setSpacing(6)
+        b_lay.setContentsMargins(12, 8, 14, 14)
+        b_lay.setSpacing(8)
         self.input = TodoInput(self._max_input_level, bottom)
         self.input.submitted.connect(self._add)
         self.count_label = QLabel(bottom)
         self.count_label.setObjectName("countLabel")
-        grip_box = QVBoxLayout()
-        grip_box.setContentsMargins(0, 0, 0, 0)
-        grip_box.addStretch(1)
-        self.grip = QSizeGrip(bottom)
-        grip_box.addWidget(self.grip, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignBottom)
         b_lay.addWidget(self.input, 1)
         b_lay.addWidget(self.count_label)
-        b_lay.addLayout(grip_box)
         card_lay.addWidget(bottom)
+
+        # 크기 조절 손잡이: 레이아웃 밖에서 카드 오른쪽 아래 모서리에 붙인다
+        self.grip = QSizeGrip(self.card)
+        self.grip.setFixedSize(14, 14)
+        self.card.installEventFilter(self)
 
         manager = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         manager.setContext(Qt.ShortcutContext.WindowShortcut)
@@ -1011,8 +1024,8 @@ class NoteWidget(QWidget):
         # 그림자는 paintEvent에서 카드 바깥 여백에 직접 그린다.
         # (QGraphicsDropShadowEffect는 카드를 그림으로 캐시해서 색 변경이 안 보이고
         #  글자 렌더링도 틀어지는 문제가 있었다)
-        m = SHADOW_PX if pal["shadow"] else 0
-        self._outer.setContentsMargins(m, m, m, m)
+        # 그림자를 꺼도 여백은 그대로 둔다 (끄는 순간 노트가 커지면 어색함)
+        self._outer.setContentsMargins(SHADOW_PX, SHADOW_PX, SHADOW_PX, SHADOW_PX)
         self.update()
 
     def paintEvent(self, _event) -> None:  # noqa: N802
@@ -1238,6 +1251,14 @@ class NoteWidget(QWidget):
     def resizeEvent(self, e) -> None:  # noqa: N802
         super().resizeEvent(e)
         self._remember_geometry()
+
+    def eventFilter(self, obj, e) -> bool:  # noqa: N802
+        if obj is self.card and e.type() == QEvent.Type.Resize:
+            self.grip.move(
+                self.card.width() - self.grip.width(), self.card.height() - self.grip.height()
+            )
+            self.grip.raise_()
+        return super().eventFilter(obj, e)
 
     def _remember_geometry(self) -> None:
         if self._restoring:
