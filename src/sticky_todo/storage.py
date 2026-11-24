@@ -43,8 +43,12 @@ def today_str() -> str:
     return date.today().isoformat()
 
 
+MAX_TEXT_LEN = 500  # 할 일 한 개의 최대 글자 수 (입력칸과 같음)
+
+
 def _clean_text(text: str) -> str:
-    return " ".join(str(text).split())
+    """공백 정리 + 길이 제한. 아주 긴 글 하나로 화면이 멈추는 걸 막는다."""
+    return " ".join(str(text).split())[:MAX_TEXT_LEN]
 
 
 @dataclass

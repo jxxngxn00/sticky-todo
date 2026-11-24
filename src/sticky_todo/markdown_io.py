@@ -15,7 +15,9 @@ from .storage import Todo
 
 INDENT_UNIT = "  "  # 내보낼 때 한 단계당 공백 2칸
 TAB_WIDTH = 4
-MAX_IMPORT_BYTES = 5 * 1024 * 1024
+MAX_IMPORT_BYTES = 1 * 1024 * 1024
+MAX_IMPORT_ITEMS = 200  # 한 번에 불러오는 최대 개수 (많으면 화면이 느려짐)
+CONFIRM_IMPORT_ITEMS = 50  # 이보다 많으면 먼저 물어본다
 DEFAULT_TITLE = "오늘 할 일"
 
 # - [ ] / - [x] / - [X] / * [ ] / * [x]
@@ -103,7 +105,7 @@ def parse_markdown(text: str) -> list[tuple[str, bool, int]]:
 def read_markdown_file(path: Path) -> list[tuple[str, bool, int]]:
     path = Path(path)
     if path.stat().st_size > MAX_IMPORT_BYTES:
-        raise ValueError("파일이 너무 커 (5MB 초과)")
+        raise ValueError("파일이 너무 커요 (1MB 초과)")
     data = path.read_bytes()
     try:
         text = data.decode("utf-8-sig")

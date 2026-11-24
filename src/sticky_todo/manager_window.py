@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import html
 from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -89,6 +90,13 @@ def format_time(value: str | None, now: datetime | None = None) -> str:
     if t.year == now.year:
         return t.strftime("%m-%d %H:%M")
     return t.strftime("%Y-%m-%d")
+
+
+def plain_tooltip(lines: list[str]) -> str:
+    """툴팁은 글자에 HTML 같은 게 보이면 자동으로 HTML로 해석한다.
+    사용자 글을 이스케이프해서 항상 글자 그대로 보이게 한다."""
+    body = "<br>".join(html.escape(line) for line in lines)
+    return f"<p style='white-space:pre-wrap'>{body}</p>"
 
 
 def parent_names(todos: list[Todo]) -> dict[str, str]:
@@ -177,10 +185,12 @@ class TodoTableModel(QAbstractTableModel):
             return self.parents.get(t.id)
         if role == Qt.ItemDataRole.ToolTipRole and col == COL_TEXT:
             parent = self.parents.get(t.id)
-            tip = f"{t.text}\n상위 항목: {parent}" if parent else t.text
+            lines = [t.text]
+            if parent:
+                lines.append(f"상위 항목: {parent}")
             if t.archived_at:
-                tip += f"\n보관: {format_time(t.archived_at)}"
-            return tip
+                lines.append(f"보관: {format_time(t.archived_at)}")
+            return plain_tooltip(lines)
         if role == Qt.ItemDataRole.ForegroundRole and col == COL_TEXT and t.done:
             return QColor(128, 128, 128)
         return None
@@ -415,6 +425,7 @@ class ManagerWindow(QWidget):
         t_lay = QHBoxLayout(self.toast)
         t_lay.setContentsMargins(14, 9, 12, 9)
         self.toast_label = QLabel()
+        self.toast_label.setTextFormat(Qt.TextFormat.PlainText)
         self.toast_undo = QToolButton()
         self.toast_undo.setText("되돌리기")
         self.toast_undo.setCursor(Qt.CursorShape.PointingHandCursor)

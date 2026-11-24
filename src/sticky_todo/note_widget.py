@@ -62,6 +62,14 @@ def _rgba(color: str, alpha: float) -> str:
     return f"rgba({c.red()}, {c.green()}, {c.blue()}, {alpha:.3f})"
 
 
+MAX_VISUAL_INDENT = 8  # 이보다 깊은 항목도 화면에서는 이만큼만 밀어서 보여준다
+
+
+def visual_indent(level: int) -> int:
+    """아주 깊게 들여쓴 파일을 불러와도 줄 폭이 끝없이 넓어져 멈추지 않게."""
+    return min(level, MAX_VISUAL_INDENT)
+
+
 def _mix(a: str, b: str, t: float) -> str:
     """a와 b를 t 비율로 섞은 불투명 색 (아이콘처럼 알파를 못 쓰는 곳용)."""
     ca, cb = QColor(a), QColor(b)
@@ -275,6 +283,9 @@ class WrapLabel(QLabel):
 
     def __init__(self, text: str, parent: QWidget | None = None) -> None:
         super().__init__(text, parent)
+        # 할 일 내용은 글자 그대로만 보여준다. 기본값(AutoText)이면 '<img src=…>' 같은
+        # HTML을 해석해서 PC의 파일을 읽어 그리거나 화면을 망가뜨릴 수 있다.
+        self.setTextFormat(Qt.TextFormat.PlainText)
         self.setWordWrap(True)
         sp = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         sp.setHeightForWidth(True)
@@ -326,7 +337,7 @@ class TodoRow(QWidget):
 
         pad = style["row_pad"]
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(6 + todo.indent * INDENT_PX, pad, 4, pad)
+        lay.setContentsMargins(6 + visual_indent(todo.indent) * INDENT_PX, pad, 4, pad)
         lay.setSpacing(6)
 
         self.check = CheckButton(self)
@@ -860,7 +871,7 @@ class TodoInput(QLineEdit):
 
     def _update_look(self) -> None:
         text, accent = self._colors
-        self.setTextMargins(self.level * INDENT_PX, 0, 0, 0)
+        self.setTextMargins(visual_indent(self.level) * INDENT_PX, 0, 0, 0)
         if self.level:
             self._lead.setIcon(icons.icon("subtask", accent))
             self.setPlaceholderText("하위 할 일")
@@ -959,6 +970,7 @@ class NoteWidget(QWidget):
         t_lay = QHBoxLayout(self.toast)
         t_lay.setContentsMargins(14, 9, 12, 9)
         self.toast_label = QLabel(self.toast)
+        self.toast_label.setTextFormat(Qt.TextFormat.PlainText)
         self.toast_undo = QToolButton(self.toast)
         self.toast_undo.setObjectName("toastButton")
         self.toast_undo.setText("되돌리기")
@@ -1369,9 +1381,30 @@ class NoteWidget(QWidget):
         if not items:
             QMessageBox.information(self, "불러오기", "체크리스트 항목(- [ ] …)을 찾지 못했어요.")
             return
+        items = self.confirm_import(items)
+        if not items:
+            return
         n = self.store.add_many(items)
         self.list_view.scroll_to_bottom()
         self.show_toast(f"{n}개 불러옴")
+
+    def confirm_import(self, items: list) -> list:
+        """많으면 먼저 묻고, 최대 개수를 넘으면 앞부분만 불러온다. 취소하면 빈 목록."""
+        total = len(items)
+        limit = markdown_io.MAX_IMPORT_ITEMS
+        if total <= markdown_io.CONFIRM_IMPORT_ITEMS:
+            return items
+        if total > limit:
+            text = (
+                f"할 일이 {total}개 있어요. 한 번에 {limit}개까지만 불러올 수 있어요.\n"
+                f"앞의 {limit}개만 불러올까요?"
+            )
+        else:
+            text = f"할 일 {total}개를 지금 페이지에 불러올까요?"
+        answer = QMessageBox.question(self, "불러오기", text)
+        if answer != QMessageBox.StandardButton.Yes:
+            return []
+        return items[:limit]
 
     # ------------------------------------------------------------ 창 위치/크기
 
