@@ -52,7 +52,9 @@ MIME_TODO = "application/x-sticky-todo-id"
 FALLBACK_FONTS = ["Pretendard", "맑은 고딕", "Malgun Gothic"]
 PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
 TOAST_MS = 5000
-SHADOW_PX = 14
+SHADOW_PX = 14  # 그림자 여백 (그림자를 꺼도 유지)
+SHADOW_OFFSET_Y = 3  # 그림자를 살짝 아래로
+SHADOW_MAX_ALPHA = 0.14  # 노트 가장자리 바로 바깥의 진하기
 
 
 def _rgba(color: str, alpha: float) -> str:
@@ -1143,10 +1145,16 @@ class NoteWidget(QWidget):
         p.setPen(Qt.PenStyle.NoPen)
         rect = QRectF(self.card.geometry())
         radius = pal["radius"]
-        # 바깥에서 안쪽으로 옅은 둥근 사각형을 겹쳐 그려 부드러운 그림자를 만든다
-        for i in range(SHADOW_PX, 0, -1):
-            p.setBrush(QColor(0, 0, 0, 4))
-            r = rect.adjusted(-i, -i + 2, i, i + 2)
+        # 바깥에서 안쪽으로 아주 옅은 둥근 사각형을 겹쳐 그린다. 겹친 결과의 농도가
+        # 가장자리에서 바깥으로 갈수록 곡선(제곱)으로 줄어들도록 겹마다 농도를 다르게 준다.
+        spread = SHADOW_PX - SHADOW_OFFSET_Y
+        for i in range(spread, 0, -1):
+            outer = SHADOW_MAX_ALPHA * (1 - i / spread) ** 2
+            inner = SHADOW_MAX_ALPHA * (1 - (i - 1) / spread) ** 2
+            color = QColor(0, 0, 0)
+            color.setAlphaF(max(inner - outer, 0.0))
+            p.setBrush(color)
+            r = rect.adjusted(-i, -i + SHADOW_OFFSET_Y, i, i + SHADOW_OFFSET_Y)
             p.drawRoundedRect(r, radius + i, radius + i)
 
     # 제목 바: 항상 표시 / 마우스 올릴 때만
