@@ -341,6 +341,7 @@ class TodoRow(QWidget):
         self.editor.setText(self.todo.text)
         self.label.hide()
         self.editor.show()
+        self._align_side_widgets(Qt.AlignmentFlag.AlignVCenter)
         self.editor.setFocus()
         self.editor.selectAll()
 
@@ -351,8 +352,19 @@ class TodoRow(QWidget):
         text = " ".join(self.editor.text().split())
         self.editor.hide()
         self.label.show()
+        self._align_side_widgets(Qt.AlignmentFlag.AlignTop)
         if commit and text and text != self.todo.text:
             self.edited.emit(self.todo.id, text)
+
+    def _align_side_widgets(self, align: Qt.AlignmentFlag) -> None:
+        """체크·삭제 버튼 세로 정렬.
+
+        평소엔 위쪽(긴 글이 두 줄로 넘어가도 첫 줄 옆에 오도록),
+        편집 중엔 편집칸이 더 높으니 가운데.
+        """
+        lay = self.layout()
+        lay.setAlignment(self.check, align)
+        lay.setAlignment(self.delete_btn, align)
 
     @property
     def editing(self) -> bool:

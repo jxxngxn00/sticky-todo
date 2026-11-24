@@ -335,3 +335,17 @@ def test_shadow_toggle_keeps_note_size(note):
     note.settings.set("shadow", False)
     note.apply_settings()
     assert note.layout().contentsMargins().left() == before
+
+
+def test_side_buttons_centered_while_editing(note, store):
+    store.add("A")
+    row = note.list_view.rows[0]
+    lay = row.layout()
+    top = Qt.AlignmentFlag.AlignTop
+    center = Qt.AlignmentFlag.AlignVCenter
+    assert lay.itemAt(lay.indexOf(row.check)).alignment() == top
+    row.begin_edit()
+    assert lay.itemAt(lay.indexOf(row.check)).alignment() == center
+    assert lay.itemAt(lay.indexOf(row.delete_btn)).alignment() == center
+    QTest.keyClick(row.editor, Qt.Key.Key_Escape)
+    assert lay.itemAt(lay.indexOf(row.check)).alignment() == top
