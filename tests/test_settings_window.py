@@ -4,7 +4,7 @@ import pytest
 from PySide6.QtGui import QFont
 
 from sticky_todo.note_widget import NoteWidget
-from sticky_todo.settings import GLASS_TINTS, PRESETS, Settings
+from sticky_todo.settings import PRESETS, Settings
 from sticky_todo.settings_window import SettingsWindow
 
 
@@ -36,11 +36,10 @@ def click_radio(win, key, value):
 
 
 def test_loads_current_values(note, win):
-    group, values = win._radios["style"]
-    assert values[group.checkedId()] == "sticky"
+    group, values = win._radios["check_style"]
+    assert values[group.checkedId()] == "square"
     assert win.font_size.value() == 12
     assert win.sticky_group.isVisibleTo(win)
-    assert not win.glass_group.isVisibleTo(win)
 
 
 def test_live_preview_and_ok_saves(note, win, tmp_path):
@@ -58,30 +57,16 @@ def test_cancel_restores(note, win):
     before = note.settings.as_dict()
     win.font_size.setValue(18)
     win.apply_preset("pink")
-    click_radio(win, "style", "glass")
+    click_radio(win, "done_style", "hide")
     win.cancel_btn.click()
     assert note.settings.as_dict() == before
     assert PRESETS["yellow"]["bg_color"].upper() in note.card.styleSheet()
-
-
-def test_style_switch_shows_glass_group(note, win):
-    click_radio(win, "style", "glass")
-    assert win.glass_group.isVisibleTo(win)
-    assert not win.sticky_group.isVisibleTo(win)
-    assert note.settings["style"] == "glass"
 
 
 def test_preset_updates_color_buttons(note, win):
     win.apply_preset("sky")
     assert win.color_buttons["bg_color"].color() == PRESETS["sky"]["bg_color"].upper()
     assert note.settings["title_color"] == PRESETS["sky"]["title_color"].upper()
-
-
-def test_tint_swatch(note, win):
-    click_radio(win, "style", "glass")
-    win.tint_buttons["dark"].click()
-    assert note.settings["glass_tint"] == GLASS_TINTS["dark"].upper()
-    assert note.note_palette()["text"] == "#FFFFFF"  # 어두운 유리 → 흰 글자
 
 
 def test_reset_defaults_keeps_window_and_title(note, win):

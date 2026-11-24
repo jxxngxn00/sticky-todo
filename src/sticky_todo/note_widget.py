@@ -41,9 +41,8 @@ from PySide6.QtWidgets import (
 )
 
 from . import markdown_io
-from .backdrop import CORNER_RADIUS_PX, disable_glass, enable_glass
 from .paths import default_export_dir
-from .settings import PRESETS, Settings, contrast_text
+from .settings import PRESETS, Settings
 from .storage import Todo, TodoStore
 
 INDENT_PX = 20
@@ -52,8 +51,6 @@ FALLBACK_FONT = "Malgun Gothic"
 PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
 TOAST_MS = 5000
 SHADOW_PX = 10
-GLASS_FALLBACK_MIN_ALPHA = 0.75
-GLASS_MIN_ALPHA = 0.05
 
 
 def _rgba(color: str, alpha: float) -> str:
@@ -769,7 +766,6 @@ class NoteWidget(QWidget):
         self._settings_timer.setInterval(500)
         self._settings_timer.timeout.connect(self.save_settings)
         self._restoring = True
-        self._glass_on = False
         self._settings_win = None
         self._hover_timer = QTimer(self)
         self._hover_timer.setSingleShot(True)
@@ -856,28 +852,8 @@ class NoteWidget(QWidget):
         self.setWindowFlags(flags)
 
     def note_palette(self) -> dict:
-        """현재 모드에서 노트를 그릴 색들."""
+        """노트를 그릴 색들."""
         s = self.settings
-        if s["style"] == "glass":
-            tint = s["glass_tint"]
-            alpha = (100 - s["glass_transparency"]) / 100
-            if not self._glass_on:
-                # 블러가 없으면 너무 투명할 때 뒤 화면과 글자가 섞여 안 읽힌다
-                alpha = max(alpha, GLASS_FALLBACK_MIN_ALPHA)
-            else:
-                # 완전히 투명한 부분은 클릭이 뒤 창으로 통과해버린다 (레이어드 창 특성)
-                alpha = max(alpha, GLASS_MIN_ALPHA)
-            text = contrast_text(tint)
-            edge = 0.30 if text == "#FFFFFF" else 0.65
-            return {
-                "card": _rgba(tint, alpha),
-                "title": _rgba(tint, min(1.0, alpha + 0.15)),
-                "text": text,
-                "solid": tint,
-                "border": f"1px solid {_rgba('#FFFFFF', edge)}",  # 유리 가장자리 하이라이트
-                "radius": CORNER_RADIUS_PX[s["glass_corner"]],
-                "shadow": False,  # 글래스는 윈도우 기본 그림자
-            }
         return {
             "card": s["bg_color"],
             "title": s["title_color"],
@@ -889,7 +865,6 @@ class NoteWidget(QWidget):
         }
 
     def apply_settings(self) -> None:
-        self._update_backdrop()
         self._apply_style()
         s = self.settings
         pal = self.note_palette()
@@ -904,25 +879,6 @@ class NoteWidget(QWidget):
         self.title_bar.set_title(s["title"])
         self._update_title_visibility()
         self._on_store_changed()
-
-    def _update_backdrop(self) -> bool:
-        """글래스 모드면 Acrylic을 켜고 아니면 끈다. 켜짐 상태가 바뀌면 True."""
-        was = self._glass_on
-        if not self.isVisible():
-            return False
-        hwnd = int(self.winId())
-        if self.settings["style"] == "glass":
-            self._glass_on = enable_glass(hwnd, corner=self.settings["glass_corner"])
-        else:
-            if was:
-                disable_glass(hwnd)
-            self._glass_on = False
-        return was != self._glass_on
-
-    @property
-    def glass_active(self) -> bool:
-        """글래스 모드이고 실제로 블러가 켜졌는지 (False면 반투명 대체)."""
-        return self._glass_on
 
     def _apply_style(self) -> None:
         s = self.settings
@@ -1010,12 +966,6 @@ class NoteWidget(QWidget):
             p.setBrush(QColor(0, 0, 0, 6))
             r = rect.adjusted(-i, -i + 2, i, i + 2)
             p.drawRoundedRect(r, radius + i, radius + i)
-
-    def showEvent(self, e) -> None:  # noqa: N802
-        super().showEvent(e)
-        # 창이 처음 뜨거나 (항상 위 전환으로) 다시 만들어질 때 글래스를 다시 건다
-        if self._update_backdrop() or self.settings["style"] == "glass":
-            self._apply_style()
 
     # 제목 바: 항상 표시 / 마우스 올릴 때만
 

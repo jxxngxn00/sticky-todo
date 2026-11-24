@@ -20,13 +20,6 @@ PRESETS: dict[str, dict[str, str]] = {
     "sky": {"bg_color": "#B3E5FC", "title_color": "#81D4FA", "text_color": "#0D2B3E"},
     "mint": {"bg_color": "#C8F7DC", "title_color": "#9EEBC0", "text_color": "#123524"},
 }
-GLASS_TINTS: dict[str, str] = {
-    "light": "#FFFFFF",
-    "dark": "#1E1E1E",
-    "sky": "#9FD3FF",
-    "pink": "#FFB6CF",
-}
-
 _COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 
 
@@ -69,15 +62,11 @@ _yellow = PRESETS["yellow"]
 
 SCHEMA: dict[str, Field] = {
     # 외형
-    "style": Field("sticky", _choice("sticky", "glass")),
     "font_family": Field(DEFAULT_FONT, _text(100), str.strip),
     "font_size": Field(12, _int_range(10, 20)),
     "bg_color": Field(_yellow["bg_color"], _color, str.upper),
     "title_color": Field(_yellow["title_color"], _color, str.upper),
     "text_color": Field(_yellow["text_color"], _color, str.upper),
-    "glass_transparency": Field(40, _int_range(0, 100)),  # 0=색조 불투명, 100=유리만
-    "glass_tint": Field(GLASS_TINTS["light"], _color, str.upper),
-    "glass_corner": Field("round", _choice("none", "small", "round")),
     "corner_radius": Field(10, _int_range(0, 24)),
     "shadow": Field(True, _bool),
     "title_bar_mode": Field("always", _choice("always", "hover")),
@@ -168,34 +157,13 @@ class Settings:
 
 # 설정 창의 "기본값으로"가 되돌리는 키 (창 위치·제목·고정 여부는 유지)
 APPEARANCE_KEYS = [
-    "style",
     "font_family",
     "font_size",
     "bg_color",
     "title_color",
     "text_color",
-    "glass_transparency",
-    "glass_tint",
-    "glass_corner",
     "corner_radius",
     "shadow",
     "title_bar_mode",
 ]
 LIST_KEYS = ["check_style", "done_style", "line_spacing"]
-
-
-def luminance(color: str) -> float:
-    """상대 휘도 (0=검정, 1=흰색). WCAG 공식."""
-    c = color.lstrip("#")
-    rgb = [int(c[i : i + 2], 16) / 255 for i in (0, 2, 4)]
-    lin = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in rgb]
-    return 0.2126 * lin[0] + 0.7152 * lin[1] + 0.0722 * lin[2]
-
-
-def contrast_text(background: str) -> str:
-    """배경 위에서 잘 읽히는 글자색 (흰색 또는 거의 검정)."""
-    lum = luminance(background)
-    # 흰 글자와 검정 글자 중 대비(WCAG contrast ratio)가 더 큰 쪽
-    white = 1.05 / (lum + 0.05)
-    black = (lum + 0.05) / 0.05
-    return "#FFFFFF" if white > black else "#1A1A1A"

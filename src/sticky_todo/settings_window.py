@@ -25,15 +25,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .backdrop import acrylic_supported
 from .note_widget import resolve_font_family
-from .settings import APPEARANCE_KEYS, GLASS_TINTS, LIST_KEYS, PRESETS
+from .settings import APPEARANCE_KEYS, LIST_KEYS, PRESETS
 
 if TYPE_CHECKING:
     from .note_widget import NoteWidget
 
 PRESET_NAMES = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
-TINT_NAMES = {"light": "밝은", "dark": "어두운", "sky": "하늘", "pink": "분홍"}
 
 
 class ColorButton(QPushButton):
@@ -149,10 +147,6 @@ class SettingsWindow(QDialog):
         page = QWidget()
         form = QFormLayout(page)
 
-        form.addRow(
-            "스타일", self._radio_row("style", [("sticky", "스티키 노트"), ("glass", "글래스")])
-        )
-
         self.font_combo = QFontComboBox()
         # 한글이 깨지지 않는 글꼴만 보여준다
         self.font_combo.setWritingSystem(QFontDatabase.WritingSystem.Korean)
@@ -162,8 +156,8 @@ class SettingsWindow(QDialog):
         size_box, self.font_size = self._slider("font_size", 10, 20, "pt")
         form.addRow("글자 크기", size_box)
 
-        # --- 스티키 노트 모드
-        self.sticky_group = QGroupBox("스티키 노트")
+        # --- 색상·모양
+        self.sticky_group = QGroupBox("노트 색상")
         sform = QFormLayout(self.sticky_group)
         presets = QHBoxLayout()
         self.preset_buttons: dict[str, QToolButton] = {}
@@ -194,40 +188,6 @@ class SettingsWindow(QDialog):
         self.shadow_check.toggled.connect(lambda on: self.change("shadow", on))
         sform.addRow("", self.shadow_check)
         form.addRow(self.sticky_group)
-
-        # --- 글래스 모드
-        self.glass_group = QGroupBox("글래스")
-        gform = QFormLayout(self.glass_group)
-        trans_box, self.glass_transparency = self._slider("glass_transparency", 0, 100, "%")
-        gform.addRow("유리 투명도", trans_box)
-        tints = QHBoxLayout()
-        self.tint_buttons: dict[str, QToolButton] = {}
-        for key, name in TINT_NAMES.items():
-            color = GLASS_TINTS[key]
-            b = _swatch(color, "#888888", name)
-            b.clicked.connect(lambda _=False, c=color: self.set_tint(c))
-            self.tint_buttons[key] = b
-            tints.addWidget(b)
-        self.tint_custom = ColorButton("유리 색조")
-        self.tint_custom.color_picked.connect(lambda c: self.change("glass_tint", c))
-        tints.addSpacing(8)
-        tints.addWidget(self.tint_custom)
-        tints.addStretch(1)
-        gform.addRow("유리 색조", tints)
-        gform.addRow(
-            "모서리",
-            self._radio_row(
-                "glass_corner", [("none", "없음"), ("small", "작게"), ("round", "보통")]
-            ),
-        )
-        self.glass_hint = QLabel(
-            "이 PC에서는 블러 효과를 쓸 수 없어서 반투명 배경으로 보여요. (윈도우 11 필요)"
-        )
-        self.glass_hint.setVisible(not acrylic_supported())
-        self.glass_hint.setWordWrap(True)
-        self.glass_hint.setStyleSheet("color: palette(placeholder-text);")
-        gform.addRow(self.glass_hint)
-        form.addRow(self.glass_group)
 
         form.addRow(
             "제목 바",
@@ -285,7 +245,6 @@ class SettingsWindow(QDialog):
         widgets: list[tuple[Any, Any]] = [
             (self.font_size, s["font_size"]),
             (self.corner_radius, s["corner_radius"]),
-            (self.glass_transparency, s["glass_transparency"]),
         ]
         for slider, value in widgets:
             # 값 라벨은 갱신돼야 하므로 슬라이더 자체 시그널은 막지 않고 change만 건너뛴다
@@ -299,13 +258,9 @@ class SettingsWindow(QDialog):
             self.shadow_check.setChecked(s["shadow"])
         for key, cb in self.color_buttons.items():
             cb.set_color(s[key])
-        self.tint_custom.set_color(s["glass_tint"])
         self._sync_visibility()
 
     def _sync_visibility(self) -> None:
-        glass = self.settings["style"] == "glass"
-        self.sticky_group.setVisible(not glass)
-        self.glass_group.setVisible(glass)
         self.done_hint.setText(
             "같은 부모 안에서 완료 항목을 아래로 내려요. 이 모드에서는 드래그 정렬이 꺼져요."
             if self.settings["done_style"] == "bottom"
@@ -325,7 +280,7 @@ class SettingsWindow(QDialog):
             return
         self.settings.set(key, value)
         self.note.apply_settings()
-        if key in ("style", "done_style"):
+        if key == "done_style":
             self._sync_visibility()
 
     def apply_preset(self, name: str) -> None:
@@ -333,10 +288,6 @@ class SettingsWindow(QDialog):
         self.note.apply_settings()
         for key, cb in self.color_buttons.items():
             cb.set_color(self.settings[key])
-
-    def set_tint(self, color: str) -> None:
-        self.tint_custom.set_color(color)
-        self.change("glass_tint", color.upper())
 
     def reset_defaults(self) -> None:
         self.settings.reset(APPEARANCE_KEYS + LIST_KEYS)
