@@ -14,6 +14,7 @@ from sticky_todo.storage import (
     Status,
     UnsupportedVersionError,
     parse_todos,
+    today_str,
 )
 
 
@@ -458,7 +459,7 @@ def test_archive_saved_and_reloaded(make_store):
     s1.add("남은 일")
     s1.flush()
     data = json.loads(s1.todos_file.read_text(encoding="utf-8"))
-    assert data["version"] == 2
+    assert data["version"] == CURRENT_VERSION
     assert [x["text"] for x in data["archive"]] == ["보관할 일"]
     s2 = make_store()
     s2.load()
@@ -481,3 +482,70 @@ def test_archive_selected_with_children_and_undo(store):
     assert [t.text for t in store.archived()] == ["P", "C"]
     store.undo_delete()
     assert tree(store) == [("P", 0), ("C", 1), ("Q", 0)]
+
+
+# ---------------------------------------------------------------- 날짜 페이지
+
+
+def test_pages_are_independent(store):
+    store.add("오늘 A")
+    store.set_day("2026-12-01")
+    store.add("미래 B")
+    store.add("미래 B1", 1)
+    assert [t.text for t in store.todos()] == ["미래 B", "미래 B1"]
+    assert [t.day for t in store.todos()] == ["2026-12-01"] * 2
+    assert len(store) == 3
+    assert store.counts("2026-12-01")[Status.ALL] == 2
+    assert store.counts()[Status.ALL] == 3
+    assert [t.text for t in store.query("B")] == ["미래 B", "미래 B1"]  # 모든 날짜 검색
+    a_id = store.query("오늘")[0].id
+    store.set_done(a_id, True)  # 다른 날짜 항목도 id로 수정 가능
+    assert store.get(a_id).done
+
+
+def test_move_to_day_and_overdue(store):
+    ids = build(store, [("P", 0), ("C", 1), ("Q", 0)])
+    assert store.move_to_day([ids["C"]], "2026-12-01") == 1
+    assert store.todos("2026-12-01")[0].indent == 0
+    assert store.move_to_day([ids["P"]], "2020-01-01") == 1
+    assert [t.text for t in store.overdue()] == ["P"]
+    assert store.bring_overdue() == 1
+    assert [t.text for t in store.todos()][0] == "P"
+    assert store.overdue() == []
+
+
+def test_drag_cannot_cross_days(store):
+    a = store.add("A")
+    store.set_day("2026-12-01")
+    b = store.add("B")
+    store.set_day(today_str())
+    with pytest.raises(ValueError):
+        store.move(a.id, before_id=b.id)
+    assert [t.text for t in store.todos()] == ["A"]
+
+
+def test_days_saved_and_reloaded(make_store):
+    s1 = make_store()
+    s1.add("오늘")
+    s1.set_day("2026-12-25")
+    s1.add("크리스마스")
+    s1.flush()
+    s2 = make_store()
+    s2.load()
+    assert s2.days() == sorted([today_str(), "2026-12-25"])
+    assert [t.text for t in s2.todos("2026-12-25")] == ["크리스마스"]
+
+
+def test_v2_file_migrates_to_today(store):
+    v2 = {"version": 2, "todos": [{"id": "a", "text": "기존 할 일"}], "archive": []}
+    store.todos_file.write_text(json.dumps(v2), encoding="utf-8")
+    store.load()
+    assert [t.text for t in store.todos(today_str())] == ["기존 할 일"]
+
+
+def test_restore_goes_to_today(store):
+    store.set_day("2026-12-01")
+    t = store.add("미래 일")
+    store.archive([t.id])
+    store.restore([t.id])
+    assert store.get(t.id).day == today_str()

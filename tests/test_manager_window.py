@@ -339,3 +339,29 @@ def test_context_menu_in_archived_view(win, store):
     labels = menu_texts(win.build_context_menu())
     assert labels[0] == "노트로 복원 (1개)" and "완전히 삭제" in labels
     assert "보관함으로 (1개)" not in labels
+
+
+def test_day_column_and_move_to_tomorrow(win, store):
+    from datetime import date, timedelta
+
+    from sticky_todo.manager_window import COL_DAY
+
+    ids = fill(store)
+    row = texts(win).index("C 회의")
+    assert cell(win, row, COL_DAY) == "오늘"
+    win.select_ids([ids["C"]])
+    labels = menu_texts(win.build_context_menu())
+    assert "날짜 옮기기" in labels and "노트에서 보기" in labels
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    win.move_selected_to(tomorrow)
+    assert store.get(ids["C"]).day == tomorrow
+    assert cell(win, texts(win).index("C 회의"), COL_DAY) == "내일"
+    assert "내일" in win.toast_label.text()
+
+
+def test_search_spans_all_days(win, store):
+    store.add("오늘 회의")
+    store.set_day("2026-12-31")
+    store.add("연말 회의")
+    win.search.setText("회의")
+    assert sorted(texts(win)) == ["연말 회의", "오늘 회의"]

@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 from . import icons, markdown_io
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
-from .storage import Todo, TodoStore
+from .storage import Todo, TodoStore, today_str
 
 INDENT_PX = 20
 MIME_TODO = "application/x-sticky-todo-id"
@@ -76,6 +76,42 @@ def resolve_font_family(name: str) -> str:
         if candidate in families:
             return candidate
     return FALLBACK_FONTS[-1]
+
+
+# ---------------------------------------------------------------- 날짜 표시
+
+WEEKDAYS = "월화수목금토일"
+
+
+def day_label(day: str, today: date | None = None, *, short: bool = False) -> str:
+    """'오늘 · 11월 24일 (월)' / '내일 · …' / '11월 27일 (목)'. short면 '오늘', '11/27 (목)'."""
+    d = date.fromisoformat(day)
+    today = today or date.today()
+    rel = {0: "오늘", 1: "내일", -1: "어제"}.get((d - today).days)
+    wd = WEEKDAYS[d.weekday()]
+    if short:
+        return rel or (f"{d.month}/{d.day} ({wd})" if d.year == today.year else d.isoformat())
+    base = f"{d.month}월 {d.day}일 ({wd})"
+    if d.year != today.year:
+        base = f"{d.year}년 {base}"
+    return f"{rel} · {base}" if rel else base
+
+
+def day_title(day: str, today: date | None = None) -> tuple[str, str]:
+    """노트 제목 두 줄: ('오늘', '11월 24일 화요일') / ('11월 27일', '목요일')."""
+    d = date.fromisoformat(day)
+    today = today or date.today()
+    rel = {0: "오늘", 1: "내일", -1: "어제"}.get((d - today).days)
+    wd = f"{WEEKDAYS[d.weekday()]}요일"
+    md = f"{d.month}월 {d.day}일"
+    year = f"{d.year}년 " if d.year != today.year else ""
+    if rel:
+        return rel, f"{year}{md} {wd}"
+    return md, f"{year}{wd}".strip()
+
+
+def _shift_day(day: str, delta: int) -> str:
+    return date.fromordinal(date.fromisoformat(day).toordinal() + delta).isoformat()
 
 
 # ---------------------------------------------------------------- 드래그 위치 계산
@@ -678,28 +714,44 @@ class TodoListView(QScrollArea):
 
 
 class TitleBar(QWidget):
-    renamed = Signal(str)
+    """‹ 날짜 › 와 고정·메뉴·닫기 버튼. 끌면 창이 움직이고, 날짜를 더블클릭하면 오늘로."""
+
+    prev_requested = Signal()
+    next_requested = Signal()
+    today_requested = Signal()
 
     def __init__(self, title: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("titleBar")
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._press: QPoint | None = None
         lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 4, 4, 4)
-        lay.setSpacing(2)
+        lay.setContentsMargins(4, 4, 4, 4)
+        lay.setSpacing(0)
 
+        self.prev_btn = self._button("이전 날짜 (Alt+←)")
+        self.prev_btn.setFixedSize(24, 28)
+        self.prev_btn.clicked.connect(self.prev_requested.emit)
         self.label = QLabel(title, self)
         self.label.setObjectName("titleLabel")
+        self.label.setToolTip("더블클릭하면 오늘로")
         # 좁은 창에서도 줄어들 수 있게 (넘치는 글자는 잘림)
-        self.label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.label.setMinimumWidth(20)
-        self.editor = QLineEdit(self)
-        self.editor.setMaxLength(50)
-        self.editor.hide()
-        self.editor.editingFinished.connect(self._finish_rename)
-        self.editor.installEventFilter(self)
-        lay.addWidget(self.label, 1)
-        lay.addWidget(self.editor, 1)
+        self.sub = QLabel(self)
+        self.sub.setObjectName("titleSub")
+        self.sub.setMinimumWidth(20)
+        title_box = QVBoxLayout()
+        title_box.setContentsMargins(2, 0, 2, 0)
+        title_box.setSpacing(0)
+        title_box.addWidget(self.label)
+        title_box.addWidget(self.sub)
+        self.next_btn = self._button("다음 날짜 (Alt+→)")
+        self.next_btn.setFixedSize(24, 28)
+        self.next_btn.clicked.connect(self.next_requested.emit)
+        lay.addWidget(self.prev_btn)
+        lay.addLayout(title_box)
+        lay.addWidget(self.next_btn)
+        lay.addStretch(1)
 
         self.pin_btn = self._button("항상 위에 고정")
         self.pin_btn.setCheckable(True)
@@ -724,6 +776,8 @@ class TitleBar(QWidget):
             self.pin_btn.setIcon(icons.icon("pin", soft))
         self.menu_btn.setIcon(icons.icon("more", soft))
         self.close_btn.setIcon(icons.icon("close", soft))
+        self.prev_btn.setIcon(icons.icon("chevron_left", soft))
+        self.next_btn.setIcon(icons.icon("chevron_right", soft))
 
     def _button(self, tip: str) -> QToolButton:
         b = QToolButton(self)
@@ -735,43 +789,40 @@ class TitleBar(QWidget):
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         return b
 
-    def set_title(self, title: str) -> None:
+    def set_title(self, title: str, sub: str = "") -> None:
         self.label.setText(title)
+        self.sub.setText(sub)
+        self.sub.setVisible(bool(sub))
 
-    def _finish_rename(self) -> None:
-        if not self.editor.isVisible():
-            return
-        text = " ".join(self.editor.text().split())
-        self.editor.hide()
-        self.label.show()
-        if text and text != self.label.text():
-            self.renamed.emit(text)
-
-    def eventFilter(self, obj, event) -> bool:  # noqa: N802
-        if (
-            obj is self.editor
-            and event.type() == QEvent.Type.KeyPress
-            and event.key() == Qt.Key.Key_Escape
-        ):
-            self.editor.setText(self.label.text())
-            self._finish_rename()
-            return True
-        return super().eventFilter(obj, event)
-
+    # 누르는 순간이 아니라 끌기 시작할 때 창 이동을 시작한다 (더블클릭이 씹히지 않게)
     def mousePressEvent(self, e: QMouseEvent) -> None:  # noqa: N802
-        if e.button() == Qt.MouseButton.LeftButton and not self.editor.isVisible():
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._press = e.position().toPoint()
+            e.accept()  # 받아야 이어지는 마우스 이동이 이 위젯으로 온다
+            return
+        super().mousePressEvent(e)
+
+    def mouseMoveEvent(self, e: QMouseEvent) -> None:  # noqa: N802
+        if (
+            self._press is not None
+            and e.buttons() & Qt.MouseButton.LeftButton
+            and (e.position().toPoint() - self._press).manhattanLength()
+            >= QApplication.startDragDistance()
+        ):
+            self._press = None
             handle = self.window().windowHandle()
             if handle is not None:
                 handle.startSystemMove()  # 윈도우 스냅 등 기본 이동 동작
-        super().mousePressEvent(e)
+        super().mouseMoveEvent(e)
+
+    def mouseReleaseEvent(self, e: QMouseEvent) -> None:  # noqa: N802
+        self._press = None
+        super().mouseReleaseEvent(e)
 
     def mouseDoubleClickEvent(self, e: QMouseEvent) -> None:  # noqa: N802
-        if self.label.geometry().contains(e.position().toPoint()):
-            self.editor.setText(self.label.text())
-            self.label.hide()
-            self.editor.show()
-            self.editor.setFocus()
-            self.editor.selectAll()
+        pos = e.position().toPoint()
+        if self.label.geometry().contains(pos) or self.sub.geometry().contains(pos):
+            self.today_requested.emit()
             e.accept()
             return
         super().mouseDoubleClickEvent(e)
@@ -866,13 +917,35 @@ class NoteWidget(QWidget):
         card_lay.setContentsMargins(0, 0, 0, 0)
         card_lay.setSpacing(0)
 
-        self.title_bar = TitleBar(settings["title"], self.card)
+        self.title_bar = TitleBar(day_title(store.current_day)[0], self.card)
         self.title_bar.pin_btn.setChecked(settings["always_on_top"])
         self.title_bar.pin_btn.toggled.connect(self.set_always_on_top)
         self.title_bar.menu_btn.clicked.connect(self._show_menu)
         self.title_bar.close_btn.clicked.connect(self.close)
-        self.title_bar.renamed.connect(self._rename)
+        self.title_bar.prev_requested.connect(lambda: self.go_day(-1))
+        self.title_bar.next_requested.connect(lambda: self.go_day(1))
+        self.title_bar.today_requested.connect(self.go_today)
         card_lay.addWidget(self.title_bar)
+
+        # 오늘 페이지에서: 지난 날 못 끝낸 일 가져오기
+        self.overdue_bar = QFrame(self.card)
+        self.overdue_bar.setObjectName("overdueBar")
+        o_lay = QHBoxLayout(self.overdue_bar)
+        o_lay.setContentsMargins(12, 7, 8, 7)
+        self.overdue_label = QLabel(self.overdue_bar)
+        self.overdue_label.setObjectName("overdueLabel")
+        self.overdue_btn = QToolButton(self.overdue_bar)
+        self.overdue_btn.setObjectName("overdueButton")
+        self.overdue_btn.setText("가져오기")
+        self.overdue_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.overdue_btn.clicked.connect(self.bring_overdue)
+        o_lay.addWidget(self.overdue_label, 1)
+        o_lay.addWidget(self.overdue_btn)
+        self.overdue_bar.hide()
+        overdue_wrap = QVBoxLayout()
+        overdue_wrap.setContentsMargins(10, 0, 10, 4)
+        overdue_wrap.addWidget(self.overdue_bar)
+        card_lay.addLayout(overdue_wrap)
 
         self.list_view = TodoListView(store, self.card)
         self.list_view.delete_done.connect(lambda n: self.show_toast(f"{n}개 삭제됨", undo=True))
@@ -915,6 +988,11 @@ class NoteWidget(QWidget):
         self.grip.setFixedSize(14, 14)
         self.card.installEventFilter(self)
 
+        for seq, delta in (("Alt+Left", -1), ("Alt+Right", 1)):
+            sc = QShortcut(QKeySequence(seq), self)
+            sc.setContext(Qt.ShortcutContext.WindowShortcut)
+            sc.activated.connect(lambda d=delta: self.go_day(d))
+
         manager = QShortcut(QKeySequence("Ctrl+Shift+L"), self)
         manager.setContext(Qt.ShortcutContext.WindowShortcut)
         manager.activated.connect(self.open_manager_window)
@@ -930,7 +1008,8 @@ class NoteWidget(QWidget):
         # 날짜가 바뀌었는지 1분마다 확인해서 지난 날 완료한 항목을 보관
         self._day_timer = QTimer(self)
         self._day_timer.setInterval(60_000)
-        self._day_timer.timeout.connect(self.auto_archive)
+        self._today = today_str()
+        self._day_timer.timeout.connect(self.check_new_day)
         self._day_timer.start()
         QTimer.singleShot(0, self.auto_archive)
         self._restoring = False
@@ -970,7 +1049,6 @@ class NoteWidget(QWidget):
             "bg_color": pal["solid"],
             "accent_color": pal["accent"],
         }
-        self.title_bar.set_title(s["title"])
         self._update_title_visibility()
         if self._manager_win is not None:
             self._manager_win.apply_style()  # 강조색을 관리 창에도
@@ -1001,7 +1079,8 @@ class NoteWidget(QWidget):
                 background: {title};
                 border-top-left-radius: {r}px; border-top-right-radius: {r}px;
             }}
-            #titleLabel {{ font-size: {size + 3}pt; font-weight: 700; }}
+            #titleLabel {{ font-size: {size + 4}pt; font-weight: 700; }}
+            #titleSub {{ color: {_rgba(text, 0.5)}; font-size: {max(size - 2, 9)}pt; }}
             #titleButton {{ border: none; background: transparent; border-radius: 14px; }}
             #titleButton:hover {{ background: {_rgba(text, 0.08)}; }}
             #titleButton:checked {{ background: {_rgba(accent, 0.14)}; }}
@@ -1014,6 +1093,12 @@ class NoteWidget(QWidget):
             #row QLabel[strike="true"] {{ text-decoration: line-through; }}
             #rowDelete {{ border: none; background: transparent; }}
             #emptyLabel {{ color: {_rgba(text, 0.35)}; padding: 24px; }}
+            #overdueBar {{ background: {_rgba(accent, 0.12)}; border-radius: 10px; }}
+            #overdueLabel {{ color: {_rgba(text, 0.75)}; font-size: {max(size - 2, 9)}pt; }}
+            #overdueButton {{
+                border: none; background: transparent; color: {accent}; font-weight: 700;
+                font-size: {max(size - 2, 9)}pt;
+            }}
             #dropIndicator {{ background: {accent}; border-radius: 1px; }}
             QLineEdit {{
                 background: {_rgba("#767680", 0.12)}; border: none; border-radius: 10px;
@@ -1069,11 +1154,7 @@ class NoteWidget(QWidget):
     def _update_title_visibility(self, hovered: bool | None = None) -> None:
         if hovered is None:
             hovered = self.isVisible() and self.geometry().contains(QCursor.pos())
-        show = (
-            self.settings["title_bar_mode"] == "always"
-            or hovered
-            or self.title_bar.editor.isVisible()
-        )
+        show = self.settings["title_bar_mode"] == "always" or hovered
         self.title_bar.setVisible(show)
 
     def enterEvent(self, e) -> None:  # noqa: N802
@@ -1087,8 +1168,13 @@ class NoteWidget(QWidget):
 
     def _on_store_changed(self) -> None:
         self.list_view.rebuild()
-        c = self.store.counts()
+        day = self.store.current_day
+        c = self.store.counts(day)
         self.count_label.setText(f"{c['done']}/{c['all']}")
+        self.title_bar.set_title(*day_title(day))
+        overdue = len(self.store.overdue()) if day == today_str() else 0
+        self.overdue_label.setText(f"지난 날 못 끝낸 일 {overdue}개")
+        self.overdue_bar.setVisible(overdue > 0)
         if self.input.level > self._max_input_level():
             self.input.set_level(self.input.level)
 
@@ -1102,10 +1188,27 @@ class NoteWidget(QWidget):
         self.store.add(text, level)
         self.list_view.scroll_to_bottom()
 
-    def _rename(self, title: str) -> None:
-        self.settings.set("title", title)
-        self.title_bar.set_title(self.settings["title"])
-        self.schedule_settings_save()
+    # ------------------------------------------------------------ 날짜 페이지
+
+    def go_day(self, delta: int) -> None:
+        self.store.set_day(_shift_day(self.store.current_day, delta))
+
+    def go_today(self) -> None:
+        self.store.set_day(today_str())
+
+    def bring_overdue(self) -> None:
+        n = self.store.bring_overdue()
+        if n:
+            self.show_toast(f"지난 날 못 끝낸 일 {n}개를 가져왔어요")
+
+    def check_new_day(self) -> None:
+        """1분마다: 자정이 지났으면 보던 '오늘'을 새 오늘로 넘기고 자동 보관."""
+        today = today_str()
+        if today != self._today:
+            if self.store.current_day == self._today:
+                self.store.set_day(today)
+            self._today = today
+        self.auto_archive()
 
     def set_always_on_top(self, on: bool) -> None:
         self.settings.set("always_on_top", on)
@@ -1152,7 +1255,7 @@ class NoteWidget(QWidget):
             a.setCheckable(True)
             a.setChecked(all(self.settings[f] == v.upper() for f, v in PRESETS[key].items()))
         archive = menu.addAction("완료 항목 보관", self.archive_completed)
-        archive.setEnabled(self.store.counts()["done"] > 0)
+        archive.setEnabled(self.store.counts(self.store.current_day)["done"] > 0)
         menu.addSeparator()
         menu.addAction("설정…", self.open_settings_window)
         auto = menu.addAction("시작 시 자동 실행")  # 5단계
@@ -1195,7 +1298,7 @@ class NoteWidget(QWidget):
         self._settings_win = None
 
     def archive_completed(self) -> None:
-        n = self.store.archive_completed()
+        n = self.store.archive_completed(day=self.store.current_day)
         if n:
             self.show_toast(f"완료 {n}개 보관함으로", undo=True)
 
@@ -1208,8 +1311,12 @@ class NoteWidget(QWidget):
             self.show_toast(f"지난 날 완료한 {n}개를 보관했어요", undo=True)
         return n
 
+    def page_title(self) -> str:
+        """마크다운 제목: '11월 24일 (월) 할 일'."""
+        return f"{day_label(self.store.current_day).split(' · ')[-1]} 할 일"
+
     def markdown_text(self) -> str:
-        return markdown_io.export_markdown(self.store.todos(), title=self.settings["title"])
+        return markdown_io.export_markdown(self.store.todos(), title=self.page_title())
 
     def copy_markdown(self) -> None:
         QGuiApplication.clipboard().setText(self.markdown_text())
@@ -1221,7 +1328,7 @@ class NoteWidget(QWidget):
             folder.mkdir(parents=True, exist_ok=True)
         except OSError:
             folder = folder.parent
-        name = markdown_io.default_filename(self.settings["title"])
+        name = markdown_io.default_filename("할 일", date.fromisoformat(self.store.current_day))
         path, _ = QFileDialog.getSaveFileName(
             self, "마크다운으로 저장", str(folder / name), "Markdown (*.md);;모든 파일 (*)"
         )

@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -55,15 +55,15 @@ from PySide6.QtWidgets import (
 )
 
 from . import icons, markdown_io
-from .note_widget import CheckButton
+from .note_widget import CheckButton, _shift_day, day_label
 from .paths import default_export_dir
 from .storage import SortKey, Status, Todo, TodoStore
 
 if TYPE_CHECKING:
     from .settings import Settings
 
-COL_SELECT, COL_DONE, COL_TEXT, COL_CREATED, COL_COMPLETED = range(5)
-HEADERS = ["", "완료", "내용", "만든 날", "완료한 날"]
+COL_SELECT, COL_DONE, COL_TEXT, COL_DAY, COL_CREATED, COL_COMPLETED = range(6)
+HEADERS = ["", "완료", "내용", "날짜", "만든 날", "완료한 날"]
 PARENT_ROLE = Qt.ItemDataRole.UserRole + 1
 SORT_OPTIONS = [
     (SortKey.CREATED_DESC, "최근 추가순"),
@@ -121,7 +121,7 @@ class TodoTableModel(QAbstractTableModel):
     def refresh(self) -> None:
         self.beginResetModel()
         self.rows = self.store.query(self.search, self.status, self.sort)
-        self.parents = parent_names(self.store.todos())
+        self.parents = parent_names(self.store.all_todos())
         self.endResetModel()
 
     def todo_at(self, row: int) -> Todo:
@@ -167,6 +167,8 @@ class TodoTableModel(QAbstractTableModel):
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             if col == COL_TEXT:
                 return t.text
+            if col == COL_DAY:
+                return day_label(t.day, short=True)
             if col == COL_CREATED:
                 return format_time(t.created_at)
             if col == COL_COMPLETED:
@@ -394,6 +396,7 @@ class ManagerWindow(QWidget):
         header.setSectionResizeMode(COL_SELECT, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_DONE, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(COL_TEXT, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(COL_DAY, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(COL_CREATED, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(COL_COMPLETED, QHeaderView.ResizeMode.ResizeToContents)
         self.table.setColumnWidth(COL_SELECT, 32)
@@ -600,6 +603,11 @@ class ManagerWindow(QWidget):
         all_done = all(t.done for t in todos)
         self.store.set_done_many([t.id for t in todos], not all_done)
 
+    def move_selected_to(self, day: str) -> None:
+        n = self.store.move_to_day(self.selected_ids(), day)
+        if n:
+            self.show_toast(f"{n}개를 {day_label(day, short=True)}(으)로 옮겼어요")
+
     def archive_selected(self) -> None:
         ids = self.selected_ids()
         if not ids:
@@ -624,6 +632,12 @@ class ManagerWindow(QWidget):
         menu.addAction("완료 취소" if all_done else "완료 처리", self.toggle_done_selected)
         if n == 1:
             menu.addAction("내용 수정", self._edit_current)
+        if n == 1:
+            menu.addAction("노트에서 보기", lambda: self.store.set_day(todos[0].day))
+        today = date.today().isoformat()
+        move = menu.addMenu("날짜 옮기기")
+        move.addAction("오늘로", lambda: self.move_selected_to(today))
+        move.addAction("내일로", lambda: self.move_selected_to(_shift_day(today, 1)))
         menu.addAction(f"보관함으로 ({n}개)", self.archive_selected)
         menu.addAction("마크다운으로 내보내기…", self.export_selected)
         menu.addSeparator()

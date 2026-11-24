@@ -36,6 +36,9 @@ SVGS: dict[str, str] = {
     'd="M12 7.5v9M7.5 12h9"/>',
     # 아래로 꺾인 화살표 (하위 할 일)
     "subtask": f'<path {_STROKE} d="M7 4v7a3 3 0 0 0 3 3h9"/><path {_STROKE} d="M16 11l3 3-3 3"/>',
+    # 이전 / 다음 (날짜 넘기기)
+    "chevron_left": f'<path {_STROKE} d="M14.5 6l-6 6 6 6"/>',
+    "chevron_right": f'<path {_STROKE} d="M9.5 6l6 6-6 6"/>',
     # 돋보기
     "search": f'<circle {_STROKE} cx="11" cy="11" r="6.5"/><path {_STROKE} d="M16 16l4 4"/>',
 }

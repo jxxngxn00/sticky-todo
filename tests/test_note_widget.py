@@ -151,17 +151,15 @@ def test_copy_markdown_keeps_indent(note, store):
     note.copy_markdown()
     text = QGuiApplication.clipboard().text()
     assert "- [ ] 부모\n  - [ ] 자식\n" in text
-    assert text.startswith("# 오늘 할 일")
+    assert text.startswith(f"# {note.page_title()}")
+    assert note.page_title().endswith(" 할 일")
 
 
 def test_rename_and_preset_saved(note, tmp_path):
-    note._rename("업무")
     note.apply_preset("mint")
     note.save_settings()
     saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
-    assert saved["title"] == "업무"
     assert saved["bg_color"] == PRESETS["mint"]["bg_color"].upper()
-    assert note.title_bar.label.text() == "업무"
 
 
 def test_geometry_remembered(note):
@@ -219,7 +217,7 @@ def test_preset_restyles_existing_widgets(note):
     assert note.card.graphicsEffect() is None  # 그림을 캐시하는 효과를 쓰지 않음
     size = note.settings["font_size"]
     expected = {
-        note.title_bar.label: size + 3,  # 제목은 크게
+        note.title_bar.label: size + 4,  # 제목은 크게
         note.input: size,
         note.list_view.empty_label: size,
         note.count_label: size - 2,  # 개수는 작게
@@ -369,3 +367,59 @@ def test_side_buttons_centered_while_editing(note, store):
     assert lay.itemAt(lay.indexOf(row.delete_btn)).alignment() == center
     QTest.keyClick(row.editor, Qt.Key.Key_Escape)
     assert lay.itemAt(lay.indexOf(row.check)).alignment() == top
+
+
+# ---------------------------------------------------------------- 날짜 페이지
+
+from sticky_todo.note_widget import day_label  # noqa: E402
+from sticky_todo.storage import today_str  # noqa: E402
+
+
+def test_day_label():
+    from datetime import date
+
+    today = date(2026, 11, 24)
+    assert day_label("2026-11-24", today) == "오늘 · 11월 24일 (화)"
+    assert day_label("2026-11-25", today) == "내일 · 11월 25일 (수)"
+    assert day_label("2026-11-23", today) == "어제 · 11월 23일 (월)"
+    assert day_label("2026-11-27", today) == "11월 27일 (금)"
+    assert day_label("2027-01-02", today) == "2027년 1월 2일 (토)"
+    assert day_label("2026-11-25", today, short=True) == "내일"
+    assert day_label("2026-12-01", today, short=True) == "12/1 (화)"
+
+
+def test_next_day_page_is_separate(note, store):
+    store.add("오늘 일")
+    note.title_bar.next_btn.click()
+    assert note.title_bar.label.text().startswith("내일")
+    assert note.list_view.rows == [] or not note.list_view.rows
+    note.input.insert("내일 일")
+    QTest.keyClick(note.input, Qt.Key.Key_Return)
+    assert [t.text for t in store.todos()] == ["내일 일"]
+    assert note.count_label.text() == "0/1"
+    note.title_bar.prev_btn.click()
+    assert [r.todo.text for r in note.list_view.rows] == ["오늘 일"]
+    note.go_day(1)
+    note.title_bar.today_requested.emit()  # 제목 더블클릭 = 오늘로
+    assert store.current_day == today_str()
+
+
+def test_overdue_bar_and_bring(note, store):
+    store.set_day("2020-01-01")
+    store.add("옛날 일")
+    store.set_day(today_str())
+    store.add("오늘 일")
+    assert note.overdue_bar.isVisibleTo(note)
+    assert note.overdue_label.text() == "지난 날 못 끝낸 일 1개"
+    note.overdue_btn.click()
+    assert [t.text for t in store.todos()] == ["옛날 일", "오늘 일"]
+    assert not note.overdue_bar.isVisibleTo(note)
+    note.go_day(1)
+    assert not note.overdue_bar.isVisibleTo(note)  # 오늘 페이지에서만
+
+
+def test_new_day_moves_today_page(note, store):
+    note._today = "2020-01-01"
+    store.set_day("2020-01-01")
+    note.check_new_day()
+    assert store.current_day == today_str()
