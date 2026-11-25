@@ -22,6 +22,11 @@ NAME = "StickyTodo"
 ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)
 
 
+# 영어 윈도우(CI 서버)의 출력 인코딩(cp1252)은 한글을 못 담아서 출력하다 실패한다
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+
 def make_ico(path: Path) -> None:
     """앱 아이콘을 여러 크기 PNG로 그려 .ico 파일 하나로 묶는다."""
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

@@ -8,6 +8,10 @@ from __future__ import annotations
 import sys
 import xml.etree.ElementTree as ET
 
+# 영어 윈도우(CI 서버)의 출력 인코딩(cp1252)은 한글을 못 담아서 출력하다 실패한다
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 
 def _escape(text: str) -> str:
     # 워크플로 명령 형식에서 줄바꿈·%는 이스케이프해야 한다

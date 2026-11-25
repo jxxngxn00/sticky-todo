@@ -14,6 +14,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYTHONUTF8: "1" # 영어 윈도우 서버에서도 한글 출력이 깨지거나 실패하지 않게
+
 jobs:
   check:
     runs-on: windows-latest
