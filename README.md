@@ -4,19 +4,24 @@
 날짜별 페이지, 하위 할 일, 완료 항목 보관함, 전체 검색 창, 텍스트 파일 저장/불러오기를 지원한다.
 인터넷에 연결하지 않으며, 데이터는 내 PC에만 저장된다.
 
-## 실행 (exe)
+## 설치
 
-1. `StickyTodo.exe`를 **전용 폴더**(예: `C:\Tools\StickyTodo\`)에 두고 실행한다.
-   - '다운로드' 폴더처럼 여러 파일이 섞이는 곳에서 바로 실행하지 않는다.
-     같은 폴더에 악성 DLL이 있으면 함께 불러올 위험이 있다 (DLL 하이재킹).
-2. 처음 실행하면 Windows SmartScreen이 "Windows의 PC 보호" 경고를 띄울 수 있다.
-   코드 서명을 하지 않은 exe라서 생기는 경고다. **추가 정보 → 실행**을 누른다.
-   백신이 오탐할 수도 있다 (PyInstaller로 만든 exe에서 흔한 일).
-3. 받은 파일이 진짜인지 확인하려면, 릴리즈에 함께 올라간 `StickyTodo.exe.sha256`과 비교한다.
+1. **[StickyTodo-Setup.exe 받기](https://github.com/jxxngxn00/sticky-todo/releases/latest/download/StickyTodo-Setup.exe)** 후 실행한다.
+   - 브라우저가 "일반적으로 다운로드되지 않는 파일"이라고 하면 **⋯ → 유지**.
+   - 파란 **"Windows의 PC 보호"** 창이 뜨면 **추가 정보 → 실행**
+     (코드 서명을 하지 않은 프로그램이라 뜨는 경고).
+2. **다음 → 설치**. 관리자 권한은 필요 없다.
+   - 내 계정 폴더(`%LOCALAPPDATA%\Programs\StickyTodo`)에 설치되고 시작 메뉴에 등록된다.
+   - 바탕화면 바로가기, 윈도우 시작 시 자동 실행은 설치 화면에서 고른다.
+3. **업데이트**: 새 Setup을 받아 실행하면 덮어써진다 (할 일은 그대로).
+4. **삭제**: 설정 → 앱 → Sticky Todo → 제거. 할 일 데이터까지 지울지 물어본다.
 
-   ```powershell
-   Get-FileHash .\StickyTodo.exe -Algorithm SHA256
-   ```
+설치 없이 쓰고 싶으면 릴리즈의 `StickyTodo.exe`(단독 실행 파일)를 받아 전용 폴더에 두고 실행해도 된다.
+받은 파일이 진짜인지는 함께 올라간 `.sha256` 값과 비교해 확인할 수 있다.
+
+```powershell
+Get-FileHash .\StickyTodo-Setup.exe -Algorithm SHA256
+```
 
 ## 사용법
 
@@ -78,7 +83,7 @@ uv run pytest                  # 테스트
 uv run ruff check .            # 린트
 uv run ruff format .           # 포맷
 uv run pip-audit               # 의존성 취약점 점검
-uv run python tools/build.py   # exe 빌드 → dist\StickyTodo.exe (+ .sha256)
+uv run python tools/build.py   # exe·설치 프로그램 빌드 → dist\ (Inno Setup 6 있으면 Setup.exe도)
 ```
 
 `todos.json` 스키마는 v3 (각 할 일에 `day`, 보관함은 `archive`). v1·v2 파일은 읽을 때 자동 변환된다.

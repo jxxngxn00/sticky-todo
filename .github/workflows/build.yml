@@ -51,11 +51,23 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
       - run: uv sync --locked
-      - name: exe 빌드 (+ SHA256, 배포용 zip)
-        run: uv run python tools/build.py
+      - name: Inno Setup 6.7.3 설치 (공식 릴리즈 파일, SHA256 확인 후)
+        shell: pwsh
+        run: |
+          $url = "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe"
+          $expected = "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732"
+          $file = Join-Path $env:RUNNER_TEMP "innosetup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $file
+          $actual = (Get-FileHash $file -Algorithm SHA256).Hash.ToLower()
+          if ($actual -ne $expected) { throw "Inno Setup 설치 파일 해시 불일치: $actual" }
+          Start-Process -FilePath $file -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/CURRENTUSER" -Wait
+      - name: exe + 설치 프로그램 빌드 (+ SHA256, 배포용 zip)
+        run: uv run python tools/build.py --installer
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           files: |
+            dist/StickyTodo-Setup.exe
+            dist/StickyTodo-Setup.exe.sha256
             dist/StickyTodo.exe
             dist/StickyTodo.exe.sha256
             dist/StickyTodo-*.zip

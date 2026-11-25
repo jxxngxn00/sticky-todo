@@ -106,7 +106,40 @@ def make_zip(exe: Path) -> Path:
     return out
 
 
+def find_iscc() -> Path | None:
+    """Inno Setup 컴파일러(ISCC.exe) 위치. 없으면 None."""
+    import shutil
+
+    found = shutil.which("ISCC") or shutil.which("iscc")
+    if found:
+        return Path(found)
+    for base in (
+        os.environ.get("LOCALAPPDATA", ""),
+        os.environ.get("PROGRAMFILES(X86)", ""),
+        os.environ.get("PROGRAMFILES", ""),
+    ):
+        for sub in ("Programs/Inno Setup 6", "Inno Setup 6"):
+            cand = Path(base) / sub / "ISCC.exe"
+            if base and cand.exists():
+                return cand
+    return None
+
+
+def make_installer(iscc: Path) -> Path:
+    """설치 프로그램 dist/StickyTodo-Setup.exe (링크가 버전마다 바뀌지 않게 이름에 버전 없음)."""
+    cmd = [
+        str(iscc), "/Q",
+        f"/DAppVersion={version()}",
+        f"/DSourceDir={ROOT}",
+        f"/DOutputDir={DIST}",
+        str(ROOT / "installer" / "StickyTodo.iss"),
+    ]  # fmt: skip
+    subprocess.run(cmd, check=True, cwd=ROOT)
+    return DIST / f"{NAME}-Setup.exe"
+
+
 def main() -> int:
+    need_installer = "--installer" in sys.argv  # CI 릴리즈에서는 반드시 만든다
     icon = BUILD / "icon.ico"
     make_ico(icon)
     exe = run_pyinstaller(icon)
@@ -114,6 +147,16 @@ def main() -> int:
     bundle = make_zip(exe)
     size_mb = exe.stat().st_size / 1024 / 1024
     print(f"\n완료: {exe}  ({size_mb:.1f} MB)\nSHA256: {digest}\n배포용: {bundle}")
+
+    iscc = find_iscc()
+    if iscc is None:
+        if need_installer:
+            print("Inno Setup(ISCC.exe)을 찾지 못했어요.")
+            return 1
+        print("Inno Setup이 없어서 설치 프로그램은 건너뜀")
+        return 0
+    setup = make_installer(iscc)
+    print(f"설치 프로그램: {setup}\nSHA256: {write_checksum(setup)}")
     return 0
 
 
