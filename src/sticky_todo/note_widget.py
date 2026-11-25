@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QMouseEvent,
     QPainter,
     QPainterPath,
+    QPalette,
     QPen,
     QShortcut,
 )
@@ -52,7 +53,18 @@ INDENT_PX = 20
 MIME_TODO = "application/x-sticky-todo-id"
 FALLBACK_FONTS = ["Pretendard", "맑은 고딕", "Malgun Gothic"]
 PRESET_LABELS = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
-TOAST_MS = 5000
+TOAST_MS = 10_000  # 실수로 지웠을 때 되돌릴 시간
+# 연한 배경(프리셋 4색) 위에서 WCAG 대비를 넘는 진하기: 보조 글자 4.5:1, 아이콘·테두리 3:1
+SOFT_TEXT_ALPHA = 0.66
+EMPTY_TIPS = (
+    "할 일이 없어요\n\n"
+    "• 아래 칸에 적고 Enter\n"
+    "• 더블클릭: 고치기 · 우클릭: 더보기\n"
+    "• Tab: 하위 할 일로\n"
+    "• Ctrl+Alt+T: 어디서든 노트 열기"
+)
+RING_ALPHA = 0.52
+DONE_TEXT_ALPHA = 0.55  # 완료 항목(취소선과 함께)
 SHADOW_PX = 14  # 그림자 여백 (그림자를 꺼도 유지)
 SHADOW_OFFSET_Y = 3  # 그림자를 살짝 아래로
 SHADOW_MAX_ALPHA = 0.14  # 노트 가장자리 바로 바깥의 진하기
@@ -109,7 +121,10 @@ def day_label(day: str, today: date | None = None, *, short: bool = False) -> st
 
 
 def day_title(day: str, today: date | None = None) -> tuple[str, str]:
-    """노트 제목 두 줄: ('오늘', '11월 24일 화요일') / ('11월 27일', '목요일')."""
+    """노트 제목 두 줄: ('오늘', '11월 24일 (화)') / ('11월 27일', '목요일').
+
+    부제는 좁은 노트에서도 잘리지 않게 요일을 짧게 쓴다.
+    """
     d = date.fromisoformat(day)
     today = today or date.today()
     rel = {0: "오늘", 1: "내일", -1: "어제"}.get((d - today).days)
@@ -117,7 +132,7 @@ def day_title(day: str, today: date | None = None) -> tuple[str, str]:
     md = f"{d.month}월 {d.day}일"
     year = f"{d.year}년 " if d.year != today.year else ""
     if rel:
-        return rel, f"{year}{md} {wd}"
+        return rel, f"{year}{md} ({WEEKDAYS[d.weekday()]})"
     return md, f"{year}{wd}".strip()
 
 
@@ -223,7 +238,7 @@ class CheckButton(QAbstractButton):
         self.accent = QColor("#FF9F0A")  # 완료 채움색
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(20, 20)
+        return QSize(22, 22)
 
     def paintEvent(self, _event) -> None:  # noqa: N802
         p = QPainter(self)
@@ -232,7 +247,7 @@ class CheckButton(QAbstractButton):
         r = QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
         checked = self.isChecked()
         ring = QColor(self.color)
-        ring.setAlphaF(0.30)
+        ring.setAlphaF(RING_ALPHA)  # 3:1 이상 대비
 
         if self.shape == "bullet":
             p.setPen(Qt.PenStyle.NoPen)
@@ -347,7 +362,7 @@ class TodoRow(QWidget):
         self.check.color = QColor(style["text_color"])
         self.check.accent = QColor(style["accent_color"])
         self.check.setChecked(todo.done)
-        self.check.setFixedSize(20, 20)
+        self.check.setFixedSize(22, 22)
         self.check.toggled.connect(lambda on: self.toggled.emit(self.todo.id, on))
         lay.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
 
@@ -365,9 +380,10 @@ class TodoRow(QWidget):
         self.delete_btn = QToolButton(self)
         self.delete_btn.setObjectName("rowDelete")
         self.delete_btn.setIcon(
-            icons.icon("remove", _mix(style["text_color"], style["bg_color"], 0.28), 16)
+            icons.icon("remove", _mix(style["text_color"], style["bg_color"], RING_ALPHA), 18)
         )
-        self.delete_btn.setIconSize(QSize(16, 16))
+        self.delete_btn.setIconSize(QSize(18, 18))
+        self.delete_btn.setFixedSize(26, 26)
         self.delete_btn.setToolTip("삭제")
         self.delete_btn.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.delete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -542,7 +558,8 @@ class TodoListView(QScrollArea):
         self._layout.addStretch(1)
         self.setWidget(self.container)
 
-        self.empty_label = QLabel("할 일이 없어요", self.container)
+        self.empty_label = QLabel(EMPTY_TIPS, self.container)
+        self.empty_label.setWordWrap(True)
         self.empty_label.setObjectName("emptyLabel")
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._layout.insertWidget(0, self.empty_label)
@@ -580,7 +597,7 @@ class TodoListView(QScrollArea):
             row.edit_closed.connect(self.setFocus)  # 바로 방향키로 이동할 수 있게
             self._layout.insertWidget(i, row)
             self.rows.append(row)
-        self.empty_label.setText("완료한 할 일만 있어요" if todos else "할 일이 없어요")
+        self.empty_label.setText("완료한 할 일만 있어요" if todos else EMPTY_TIPS)
         self.empty_label.setVisible(not shown)
         if self.selected_id and not any(r.todo.id == self.selected_id for r in self.rows):
             self.selected_id = None
@@ -761,7 +778,7 @@ class TitleBar(QWidget):
         lay.setSpacing(0)
 
         self.prev_btn = self._button("이전 날짜 (Alt+←)")
-        self.prev_btn.setFixedSize(24, 28)
+        self.prev_btn.setFixedSize(30, 32)
         self.prev_btn.clicked.connect(self.prev_requested.emit)
         self.label = QLabel(title, self)
         self.label.setObjectName("titleLabel")
@@ -777,7 +794,7 @@ class TitleBar(QWidget):
         title_box.addWidget(self.label)
         title_box.addWidget(self.sub)
         self.next_btn = self._button("다음 날짜 (Alt+→)")
-        self.next_btn.setFixedSize(24, 28)
+        self.next_btn.setFixedSize(30, 32)
         self.next_btn.clicked.connect(self.next_requested.emit)
         lay.addWidget(self.prev_btn)
         lay.addLayout(title_box)
@@ -813,8 +830,8 @@ class TitleBar(QWidget):
     def _button(self, tip: str) -> QToolButton:
         b = QToolButton(self)
         b.setObjectName("titleButton")
-        b.setIconSize(QSize(18, 18))
-        b.setFixedSize(28, 28)
+        b.setIconSize(QSize(20, 20))
+        b.setFixedSize(32, 32)
         b.setToolTip(tip)
         b.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -1030,7 +1047,7 @@ class NoteWidget(QWidget):
 
         # 크기 조절 손잡이: 레이아웃 밖에서 카드 오른쪽 아래 모서리에 붙인다
         self.grip = QSizeGrip(self.card)
-        self.grip.setFixedSize(14, 14)
+        self.grip.setFixedSize(18, 18)
         self.card.installEventFilter(self)
 
         for seq, delta in (("Alt+Left", -1), ("Alt+Right", 1)):
@@ -1126,8 +1143,8 @@ class NoteWidget(QWidget):
                 border-top-left-radius: {r}px; border-top-right-radius: {r}px;
             }}
             #titleLabel {{ font-size: {size + 4}pt; font-weight: 700; }}
-            #titleSub {{ color: {_rgba(text, 0.5)}; font-size: {max(size - 2, 9)}pt; }}
-            #titleButton {{ border: none; background: transparent; border-radius: 14px; }}
+            #titleSub {{ color: {_rgba(text, SOFT_TEXT_ALPHA)}; font-size: {max(size - 1, 10)}pt; }}
+            #titleButton {{ border: none; background: transparent; border-radius: 16px; }}
             #titleButton:hover {{ background: {_rgba(text, 0.08)}; }}
             #titleButton:checked {{ background: {_rgba(accent, 0.14)}; }}
             #todoList, #rowContainer, #bottomBar {{ background: transparent; }}
@@ -1135,12 +1152,15 @@ class NoteWidget(QWidget):
             #row {{ border-radius: 10px; }}
             #row:hover {{ background: {_rgba(text, 0.05)}; }}
             #row[selected="true"] {{ background: {_rgba(accent, 0.14)}; }}
-            #row QLabel[dim="true"] {{ color: {_rgba(text, 0.38)}; }}
+            #row QLabel[dim="true"] {{ color: {_rgba(text, DONE_TEXT_ALPHA)}; }}
             #row QLabel[strike="true"] {{ text-decoration: line-through; }}
             #rowDelete {{ border: none; background: transparent; }}
-            #emptyLabel {{ color: {_rgba(text, 0.35)}; padding: 24px; }}
+            #emptyLabel {{
+                color: {_rgba(text, SOFT_TEXT_ALPHA)}; padding: 20px 14px;
+                font-size: {max(size - 1, 10)}pt;
+            }}
             #overdueBar {{ background: {_rgba(accent, 0.12)}; border-radius: 10px; }}
-            #overdueLabel {{ color: {_rgba(text, 0.75)}; font-size: {max(size - 2, 9)}pt; }}
+            #overdueLabel {{ color: {_rgba(text, 0.8)}; font-size: {max(size - 1, 10)}pt; }}
             #overdueButton {{
                 border: none; background: transparent; color: {accent}; font-weight: 700;
                 font-size: {max(size - 2, 9)}pt;
@@ -1151,11 +1171,13 @@ class NoteWidget(QWidget):
                 padding: 5px 8px; selection-background-color: {_rgba(accent, 0.35)};
             }}
             #todoInput {{ padding: 7px 6px; }}
-            #countLabel {{ color: {_rgba(text, 0.45)}; font-size: {max(size - 2, 9)}pt; }}
+            #countLabel {{
+                color: {_rgba(text, SOFT_TEXT_ALPHA)}; font-size: {max(size - 1, 10)}pt;
+            }}
             #toast {{
                 background: rgba(28, 28, 30, 0.88); border-radius: 12px; margin: 0 8px 6px 8px;
             }}
-            #toast QLabel {{ color: #FFFFFF; font-size: {max(size - 2, 9)}pt; }}
+            #toast QLabel {{ color: #FFFFFF; font-size: {max(size - 1, 10)}pt; }}
             #toastButton {{
                 border: none; background: transparent; color: {accent}; font-weight: 700;
                 font-size: {max(size - 2, 9)}pt;
@@ -1166,12 +1188,19 @@ class NoteWidget(QWidget):
             }}
             QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
             QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
-            QSizeGrip {{ width: 14px; height: 14px; }}
+            QSizeGrip {{ width: 18px; height: 18px; }}
             QToolTip {{
                 color: #FFFFFF; background: rgba(28, 28, 30, 0.92); border: none;
                 border-radius: 6px; padding: 4px 8px;
             }}
         """)
+
+        # 입력칸 안내 글씨("새로운 할 일")도 4.5:1 이상으로 (스타일시트로는 못 바꿔서 팔레트로)
+        placeholder = self.input.palette()
+        placeholder.setColor(
+            QPalette.ColorRole.PlaceholderText, QColor(_mix(text, card, SOFT_TEXT_ALPHA))
+        )
+        self.input.setPalette(placeholder)
 
         # 그림자는 paintEvent에서 카드 바깥 여백에 직접 그린다.
         # (QGraphicsDropShadowEffect는 카드를 그림으로 캐시해서 색 변경이 안 보이고
@@ -1295,9 +1324,12 @@ class NoteWidget(QWidget):
 
     def build_menu(self) -> QMenu:
         menu = QMenu(self)
-        menu.addAction("마크다운으로 저장…", self.export_markdown_file)
-        menu.addAction("마크다운 복사", self.copy_markdown)
-        menu.addAction("마크다운 불러오기…", self.import_markdown_file)
+        undo = menu.addAction("방금 지운 것 되돌리기\tCtrl+Z", self.undo_delete)
+        undo.setEnabled(self.store.can_undo())
+        menu.addSeparator()
+        menu.addAction("텍스트 파일로 저장…", self.export_markdown_file)
+        menu.addAction("목록 복사 (메모장·카톡에 붙여넣기)", self.copy_markdown)
+        menu.addAction("텍스트 파일 불러오기…", self.import_markdown_file)
         menu.addSeparator()
         act = menu.addAction("전체 목록 보기", self.open_manager_window)
         act.setShortcut(QKeySequence("Ctrl+Shift+L"))
@@ -1360,13 +1392,13 @@ class NoteWidget(QWidget):
             return menu
         today = today_str()
         day = self.store.current_day
-        menu.addAction("수정", lambda: self.list_view.begin_edit(todo_id))
+        menu.addAction("고치기\t더블클릭", lambda: self.list_view.begin_edit(todo_id))
         menu.addAction(
             "완료 취소" if todo.done else "완료 처리",
             lambda: self.store.set_done(todo_id, not todo.done),
         )
-        menu.addAction("들여쓰기 (Tab)", lambda: self.store.indent(todo_id))
-        menu.addAction("내어쓰기 (Shift+Tab)", lambda: self.store.outdent(todo_id))
+        menu.addAction("하위 할 일로\tTab", lambda: self.store.indent(todo_id))
+        menu.addAction("상위로 꺼내기\tShift+Tab", lambda: self.store.outdent(todo_id))
         menu.addSeparator()
         later = "내일로 미루기" if day == today else "다음 날로 미루기"
         menu.addAction(later, lambda: self.move_todo(todo_id, _shift_day(day, 1)))
@@ -1400,6 +1432,16 @@ class NoteWidget(QWidget):
         n = self.store.archive_completed(before=today or date.today())
         if n:
             self.show_toast(f"지난 날 완료한 {n}개를 보관했어요", undo=True)
+            if not self.settings["archive_hint_seen"]:
+                self.settings.set("archive_hint_seen", True)
+                self.schedule_settings_save()
+                QMessageBox.information(
+                    self,
+                    "완료한 일을 보관했어요",
+                    f"어제까지 완료한 할 일 {n}개를 보관함으로 옮겼어요. 지워진 게 아니에요.\n\n"
+                    "☰ 메뉴 → 전체 목록 보기 → '보관됨'에서 다시 볼 수 있어요.\n"
+                    "(설정 → 목록 동작에서 자동 보관을 끌 수 있어요)",
+                )
         return n
 
     def page_title(self) -> str:
@@ -1411,7 +1453,7 @@ class NoteWidget(QWidget):
 
     def copy_markdown(self) -> None:
         QGuiApplication.clipboard().setText(self.markdown_text())
-        self.show_toast("마크다운을 클립보드에 복사했어요")
+        self.show_toast("목록을 복사했어요. 메모장이나 카톡에 붙여넣기 하세요")
 
     def export_markdown_file(self) -> None:
         folder = default_export_dir()
@@ -1421,7 +1463,10 @@ class NoteWidget(QWidget):
             folder = folder.parent
         name = markdown_io.default_filename("할 일", date.fromisoformat(self.store.current_day))
         path, _ = QFileDialog.getSaveFileName(
-            self, "마크다운으로 저장", str(folder / name), "Markdown (*.md);;모든 파일 (*)"
+            self,
+            "텍스트 파일로 저장",
+            str(folder / name),
+            "텍스트 파일 (*.txt);;마크다운 (*.md);;모든 파일 (*)",
         )
         if not path:
             return
@@ -1438,9 +1483,9 @@ class NoteWidget(QWidget):
             folder = folder.parent
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "마크다운 불러오기",
+            "텍스트 파일 불러오기",
             str(folder),
-            "Markdown (*.md *.markdown *.txt);;모든 파일 (*)",
+            "텍스트 파일 (*.txt *.md *.markdown);;모든 파일 (*)",
         )
         if not path:
             return
@@ -1450,7 +1495,11 @@ class NoteWidget(QWidget):
             QMessageBox.warning(self, "불러오기 실패", f"파일을 읽지 못했어요.\n{e}")
             return
         if not items:
-            QMessageBox.information(self, "불러오기", "체크리스트 항목(- [ ] …)을 찾지 못했어요.")
+            QMessageBox.information(
+                self,
+                "불러오기",
+                "불러올 할 일을 찾지 못했어요.\n'- [ ] 할 일' 처럼 시작하는 줄만 불러올 수 있어요.",
+            )
             return
         items = self.confirm_import(items)
         if not items:
@@ -1572,6 +1621,16 @@ class NoteWidget(QWidget):
         if self.hide_to_tray and not self._quitting:
             # ✕는 트레이로 숨기기. 저장은 미리 해둔다.
             e.ignore()
+            if not self.settings["tray_hint_seen"]:
+                self.settings.set("tray_hint_seen", True)
+                QMessageBox.information(
+                    self,
+                    "노트를 숨겨요",
+                    "노트는 꺼지지 않고 작업표시줄 오른쪽(시계 옆 ^ 안)에 있어요.\n\n"
+                    "• 노란 메모지 아이콘을 누르거나\n"
+                    "• 아무 데서나 Ctrl+Alt+T를 누르면 다시 나타나요.\n\n"
+                    "완전히 끄려면 ☰ 메뉴 → 종료를 누르세요.",
+                )
             self.save_settings()
             self.store.flush()
             self.hide()

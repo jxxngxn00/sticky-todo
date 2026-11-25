@@ -65,9 +65,12 @@ def sanitize_filename(name: str, fallback: str = "할 일") -> str:
     return name[:150]
 
 
-def default_filename(title: str = DEFAULT_TITLE, today: date | None = None) -> str:
+def default_filename(
+    title: str = DEFAULT_TITLE, today: date | None = None, ext: str = ".txt"
+) -> str:
+    """메모장으로 바로 열리게 기본은 .txt (내용은 '- [ ] 할 일' 체크리스트)."""
     today = today or date.today()
-    return f"{sanitize_filename(title)} {today.isoformat()}.md"
+    return f"{sanitize_filename(title)} {today.isoformat()}{ext}"
 
 
 def save_markdown(path: Path, text: str) -> None:

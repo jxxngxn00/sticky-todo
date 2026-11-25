@@ -14,6 +14,27 @@ def qapp():
     yield app
 
 
+@pytest.fixture(autouse=True)
+def dialogs(monkeypatch):
+    """안내·경고 창(QMessageBox)이 테스트를 멈추지 않게, 띄우는 대신 기록만 한다."""
+    from PySide6.QtWidgets import QMessageBox
+
+    shown = []
+
+    def record(kind, answer):
+        def _show(*args, **_kw):
+            shown.append((kind, args[1] if len(args) > 1 else "", args[2] if len(args) > 2 else ""))
+            return answer
+
+        return _show
+
+    ok = QMessageBox.StandardButton.Ok
+    for kind in ("information", "warning", "critical"):
+        monkeypatch.setattr(QMessageBox, kind, record(kind, ok))
+    monkeypatch.setattr(QMessageBox, "question", record("question", QMessageBox.StandardButton.No))
+    return shown
+
+
 @pytest.fixture
 def make_store(qapp, tmp_path):
     def _make(**kw):

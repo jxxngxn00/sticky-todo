@@ -97,7 +97,8 @@ def test_sanitize_filename():
 
 
 def test_default_filename():
-    assert default_filename("오늘: 할 일", date(2026, 11, 24)) == "오늘_ 할 일 2026-11-24.md"
+    assert default_filename("오늘: 할 일", date(2026, 11, 24)) == "오늘_ 할 일 2026-11-24.txt"
+    assert default_filename("할 일", date(2026, 11, 24), ".md") == "할 일 2026-11-24.md"
 
 
 def test_file_roundtrip_utf8_and_cp949(tmp_path):

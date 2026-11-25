@@ -78,7 +78,7 @@ STATUS_OPTIONS = [
     (Status.DONE, "완료"),
     (Status.ARCHIVED, "보관됨"),
 ]
-TOAST_MS = 5000
+TOAST_MS = 10_000
 _ROOT = QModelIndex()
 
 
@@ -232,7 +232,7 @@ class TextDelegate(QStyledItemDelegate):
             return
         painter.save()
         color = QColor(opt.palette.color(opt.palette.ColorRole.Text))
-        color.setAlphaF(0.45)
+        color.setAlphaF(0.62)
         painter.setPen(color)
         hint = opt.fontMetrics.elidedText(f"‹ {parent}", Qt.TextElideMode.ElideRight, rect.width())
         painter.drawText(
@@ -272,7 +272,7 @@ class CheckDelegate(QStyledItemDelegate):
             painter.setBrush(self.accent)
         else:
             ring = QColor(opt.palette.color(opt.palette.ColorRole.Text))
-            ring.setAlphaF(0.35)
+            ring.setAlphaF(0.55)
             painter.setPen(QPen(ring, 1.5))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             r = r.adjusted(0.75, 0.75, -0.75, -0.75)
@@ -441,7 +441,7 @@ class ManagerWindow(QWidget):
         self.selection_label = QLabel()
         self.done_btn = QPushButton("완료 처리")
         self.done_btn.clicked.connect(self.toggle_done_selected)
-        self.export_btn = QPushButton("마크다운 내보내기")
+        self.export_btn = QPushButton("텍스트로 내보내기")
         self.export_btn.clicked.connect(self.export_selected)
         self.delete_btn = QPushButton("삭제")
         self.delete_btn.setObjectName("danger")
@@ -635,7 +635,7 @@ class ManagerWindow(QWidget):
         n = len(todos)
         if self.model.archived_view:
             menu.addAction(f"노트로 복원 ({n}개)", self.toggle_done_selected)
-            menu.addAction("마크다운으로 내보내기…", self.export_selected)
+            menu.addAction("텍스트 파일로 내보내기…", self.export_selected)
             menu.addSeparator()
             menu.addAction("완전히 삭제", self.delete_selected)
             return menu
@@ -650,7 +650,7 @@ class ManagerWindow(QWidget):
         move.addAction("오늘로", lambda: self.move_selected_to(today))
         move.addAction("내일로", lambda: self.move_selected_to(_shift_day(today, 1)))
         menu.addAction(f"보관함으로 ({n}개)", self.archive_selected)
-        menu.addAction("마크다운으로 내보내기…", self.export_selected)
+        menu.addAction("텍스트 파일로 내보내기…", self.export_selected)
         menu.addSeparator()
         menu.addAction("삭제", self.delete_selected)
         return menu
@@ -700,9 +700,9 @@ class ManagerWindow(QWidget):
         title = f"{self.settings['title']} (선택)"
         path, _ = QFileDialog.getSaveFileName(
             self,
-            "선택 항목 마크다운으로 저장",
+            "선택한 할 일을 텍스트 파일로 저장",
             str(folder / markdown_io.default_filename(title)),
-            "Markdown (*.md);;모든 파일 (*)",
+            "텍스트 파일 (*.txt);;마크다운 (*.md);;모든 파일 (*)",
         )
         if not path:
             return

@@ -200,7 +200,10 @@ def test_auto_archive_on_new_day(note, store):
 def test_menu_builds(note):
     menu = note.build_menu()
     labels = [a.text() for a in menu.actions() if a.text()]
-    assert "마크다운으로 저장…" in labels and "종료" in labels
+    assert "텍스트 파일로 저장…" in labels and "종료" in labels
+    assert not any("마크다운" in x for x in labels)  # 개발 용어 대신 쉬운 말
+    undo = next(a for a in menu.actions() if a.text().startswith("방금 지운 것 되돌리기"))
+    assert not undo.isEnabled()  # 지운 게 없으면 비활성
 
 
 def test_window_can_shrink(note):
@@ -219,8 +222,8 @@ def test_preset_restyles_existing_widgets(note):
     expected = {
         note.title_bar.label: size + 4,  # 제목은 크게
         note.input: size,
-        note.list_view.empty_label: size,
-        note.count_label: size - 2,  # 개수는 작게
+        note.list_view.empty_label: size - 1,  # 사용 팁
+        note.count_label: size - 1,  # 개수는 조금 작게
     }
     for w, pt in expected.items():
         w.ensurePolished()
@@ -436,10 +439,10 @@ def test_row_menu_on_today(note, store):
     a = store.add("A")
     labels = _labels(note.build_row_menu(a.id))
     assert labels == [
-        "수정",
+        "고치기\t더블클릭",
         "완료 처리",
-        "들여쓰기 (Tab)",
-        "내어쓰기 (Shift+Tab)",
+        "하위 할 일로\tTab",
+        "상위로 꺼내기\tShift+Tab",
         "내일로 미루기",
         "보관함으로",
         "삭제",
@@ -474,9 +477,75 @@ def test_row_menu_actions(note, store):
     {x.text(): x for x in menu.actions()}["완료 처리"].trigger()
     assert store.get(a.id).done
     b = store.todos()[1]
-    {x.text(): x for x in note.build_row_menu(b.id).actions()}["들여쓰기 (Tab)"].trigger()
+    {x.text(): x for x in note.build_row_menu(b.id).actions()}["하위 할 일로\tTab"].trigger()
     assert store.get(b.id).indent == 1
     note.archive_todo(a.id)
     assert [t.text for t in store.archived()] == ["A", "B"]  # 하위 항목까지
     note.toast_undo.click()
     assert len(store.todos()) == 2
+
+
+# ---------------------------------------------------------------- 사용성 (보기 쉽게, 알기 쉽게)
+
+
+def _contrast(fg, bg):
+    def lum(h):
+        c = [int(h[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    hi, lo = sorted([lum(fg), lum(bg)], reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+@pytest.mark.parametrize("preset", list(PRESETS))
+def test_soft_text_meets_contrast(preset):
+    from sticky_todo.note_widget import RING_ALPHA, SOFT_TEXT_ALPHA, _mix
+
+    p = PRESETS[preset]
+    bg, text = p["bg_color"].upper(), p["text_color"].upper()
+    assert _contrast(_mix(text, bg, SOFT_TEXT_ALPHA), bg) >= 4.5  # 날짜·개수·안내 글씨
+    assert _contrast(_mix(text, bg, RING_ALPHA), bg) >= 3.0  # 빈 체크 동그라미·아이콘
+
+
+def test_empty_page_shows_tips(note):
+    text = note.list_view.empty_label.text()
+    assert "Enter" in text and "우클릭" in text and "Ctrl+Alt+T" in text
+
+
+def test_first_hide_explains_tray_once(note, dialogs):
+    note.hide_to_tray = True
+    note.close()
+    note.show()
+    note.close()
+    hints = [d for d in dialogs if d[1] == "노트를 숨겨요"]
+    assert len(hints) == 1  # 처음 한 번만
+    assert "Ctrl+Alt+T" in hints[0][2]
+
+
+def test_first_auto_archive_explains_once(note, store, dialogs):
+    from datetime import date
+
+    for _ in range(2):
+        t = store.add("어제 끝낸 일")
+        store.set_done(t.id, True)
+        store._todos[-1].completed_at = "2026-11-20T10:00:00+09:00"
+        note.auto_archive(today=date(2026, 11, 24))
+    hints = [d for d in dialogs if d[1] == "완료한 일을 보관했어요"]
+    assert len(hints) == 1 and "보관됨" in hints[0][2]
+
+
+def test_toast_stays_long_enough(note):
+    from sticky_todo.note_widget import TOAST_MS
+
+    assert TOAST_MS >= 10_000
+
+
+def test_day_title_fits():
+    from datetime import date
+
+    from sticky_todo.note_widget import day_title
+
+    today = date(2026, 11, 25)
+    assert day_title("2026-11-25", today) == ("오늘", "11월 25일 (수)")
+    assert day_title("2026-11-27", today) == ("11월 27일", "금요일")

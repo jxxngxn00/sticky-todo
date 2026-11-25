@@ -246,7 +246,7 @@ class SettingsWindow(QDialog):
         form.addRow(
             "체크 스타일",
             self._radio_row(
-                "check_style", [("square", "네모"), ("circle", "동그라미"), ("bullet", "불릿")]
+                "check_style", [("square", "네모"), ("circle", "동그라미"), ("bullet", "점")]
             ),
         )
         form.addRow(

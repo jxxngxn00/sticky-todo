@@ -98,6 +98,9 @@ SCHEMA: dict[str, Field] = {
     "line_spacing": Field("normal", _choice("compact", "normal", "relaxed")),
     "auto_archive": Field(True, _bool),  # 날짜가 바뀌면 지난 날 완료한 항목 보관
     "global_hotkey": Field(True, _bool),  # Ctrl+Alt+T로 어디서든 노트 불러오기
+    # 처음 한 번만 보여주는 안내
+    "tray_hint_seen": Field(False, _bool),
+    "archive_hint_seen": Field(False, _bool),
     # 노트 창
     "title": Field("오늘 할 일", _text(50), str.strip),
     "always_on_top": Field(False, _bool),

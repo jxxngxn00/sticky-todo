@@ -17,7 +17,6 @@ class Tray(QSystemTrayIcon):
         super().__init__(icons.app_icon(), note)
         self.note = note
         self.setToolTip("Sticky Todo")
-        self._hint_shown = False
 
         self.menu = QMenu()
         self.toggle_action = self.menu.addAction("노트 보이기", note.toggle_visible)
@@ -34,7 +33,6 @@ class Tray(QSystemTrayIcon):
         self.setContextMenu(self.menu)
 
         self.activated.connect(self._on_activated)
-        note.hidden_to_tray.connect(self._on_hidden)
 
     def _refresh_menu(self) -> None:
         self.toggle_action.setText("노트 숨기기" if self.note.isVisible() else "노트 보이기")
@@ -52,13 +50,3 @@ class Tray(QSystemTrayIcon):
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:  # 왼쪽 클릭
             self.note.toggle_visible()
-
-    def _on_hidden(self) -> None:
-        if not self._hint_shown:
-            self._hint_shown = True
-            self.showMessage(
-                "Sticky Todo",
-                "노트를 숨겼어요. 작업표시줄 오른쪽 트레이 아이콘을 누르면 다시 보여요.",
-                icons.app_icon(),
-                4000,
-            )
