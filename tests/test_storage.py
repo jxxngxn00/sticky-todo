@@ -518,14 +518,29 @@ def test_move_to_day_and_overdue(store):
     assert store.overdue() == []
 
 
-def test_drag_cannot_cross_days(store):
+def test_drag_to_other_day(store):
+    """주간 보기: 다른 날 항목 앞으로 끌어 놓으면 그 날로 옮겨진다 (하위 항목 포함)."""
     a = store.add("A")
+    store.add("A1", indent=1)
     store.set_day("2026-12-01")
     b = store.add("B")
     store.set_day(today_str())
-    with pytest.raises(ValueError):
-        store.move(a.id, before_id=b.id)
-    assert [t.text for t in store.todos()] == ["A"]
+    store.move(a.id, before_id=b.id)
+    assert store.todos() == []
+    moved = store.todos("2026-12-01")
+    assert [(t.text, t.indent, t.day) for t in moved] == [
+        ("A", 0, "2026-12-01"),
+        ("A1", 1, "2026-12-01"),
+        ("B", 0, "2026-12-01"),
+    ]
+
+
+def test_drag_to_end_of_other_day(store):
+    a = store.add("A")
+    store.move(a.id, before_id=None, indent=3, day="2026-12-02")
+    assert store.todos() == []
+    [t] = store.todos("2026-12-02")
+    assert (t.text, t.indent, t.day) == ("A", 0, "2026-12-02")  # 빈 날 맨 앞이라 깊이 0
 
 
 def test_days_saved_and_reloaded(make_store):

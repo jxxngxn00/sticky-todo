@@ -520,27 +520,39 @@ class TodoStore(QObject):
         self._commit()
         return True
 
-    def move(self, todo_id: str, before_id: str | None = None, indent: int | None = None) -> None:
-        """하위 항목까지 묶어서 같은 페이지의 before_id 앞으로 옮긴다 (None이면 맨 끝).
+    def move(
+        self,
+        todo_id: str,
+        before_id: str | None = None,
+        indent: int | None = None,
+        day: str | None = None,
+    ) -> None:
+        """하위 항목까지 묶어서 before_id 앞으로 옮긴다.
 
+        before_id가 None이면 day 페이지(없으면 원래 페이지) 맨 끝으로.
+        before_id가 다른 날짜에 있으면 그 날짜로 옮겨진다 (주간 보기에서 다른 날로 끌기).
         indent를 주면 옮긴 묶음의 최상위 항목 깊이를 그 값으로 맞춘다 (가능한 범위로 자름).
         """
-        day, i = self._require(todo_id)
-        items = self._days[day]
+        src, i = self._require(todo_id)
+        if day is not None:
+            date.fromisoformat(day)
+        items = self._days[src]
         end = self._block_end(items, i)
         block = items[i:end]
         if before_id is not None and before_id != todo_id and any(t.id == before_id for t in block):
             raise ValueError("자기 하위 항목 안으로는 옮길 수 없음")
         del items[i:end]
         if before_id is None:
+            target = day or src
+            items = self._days.setdefault(target, [])
             pos = len(items)
         elif before_id == todo_id:  # 제자리 (깊이만 바꿀 때)
-            pos = i
+            target, pos = src, i
         else:
-            bday, pos = self._require(before_id)
-            if bday != day:
-                items[i:i] = block
-                raise ValueError("다른 날짜 페이지로는 드래그할 수 없음")
+            target, pos = self._require(before_id)
+            items = self._days[target]
+        for t in block:
+            t.day = target
         max_indent = items[pos - 1].indent + 1 if pos > 0 else 0
         target = block[0].indent if indent is None else indent
         target = max(0, min(target, max_indent))

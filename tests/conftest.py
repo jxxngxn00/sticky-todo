@@ -11,6 +11,10 @@ from sticky_todo.storage import TodoStore  # noqa: E402
 @pytest.fixture(scope="session")
 def qapp():
     app = QApplication.instance() or QApplication([])
+    # 실제 앱처럼 Pretendard를 넣어서 글자 폭·크기 테스트가 실제 화면과 같게
+    from sticky_todo import resources
+
+    resources.load_bundled_fonts()
     yield app
 
 

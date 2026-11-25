@@ -39,6 +39,13 @@ PRESETS: dict[str, dict[str, str]] = {
         "text_color": "#1C1C1E",
         "accent_color": "#30B860",
     },
+    # iOS 기본 앱 같은 무채색 회색
+    "ios": {
+        "bg_color": "#EBEBEB",
+        "title_color": "#EBEBEB",
+        "text_color": "#2F2F32",
+        "accent_color": "#FF9F0A",
+    },
 }
 
 _COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
@@ -106,8 +113,14 @@ SCHEMA: dict[str, Field] = {
     "always_on_top": Field(False, _bool),
     "window_x": Field(None, _opt_int),
     "window_y": Field(None, _opt_int),
-    "window_w": Field(280, _int_range(160, 2000)),
+    "window_w": Field(280, _int_range(160, 2000)),  # 하루 보기 크기
     "window_h": Field(360, _int_range(120, 3000)),
+    "view_mode": Field("day", _choice("day", "week", "month")),
+    "week_w": Field(320, _int_range(160, 4000)),  # 주간 보기 크기 (따로 기억)
+    "week_h": Field(600, _int_range(120, 3000)),
+    "month_w": Field(360, _int_range(160, 4000)),  # 월간 보기 크기
+    "month_h": Field(700, _int_range(120, 3000)),
+    "month_list": Field(True, _bool),  # 월간: 달력 아래 목록 보이기 (끄면 달력만)
     # 전체 할 일 관리 창
     "manager_x": Field(None, _opt_int),
     "manager_y": Field(None, _opt_int),

@@ -31,7 +31,7 @@ from .settings import APPEARANCE_KEYS, LIST_KEYS, PRESETS
 if TYPE_CHECKING:
     from .note_widget import NoteWidget
 
-PRESET_NAMES = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트"}
+PRESET_NAMES = {"yellow": "노랑", "pink": "분홍", "sky": "하늘", "mint": "민트", "ios": "iOS"}
 
 
 def dialog_buttons(

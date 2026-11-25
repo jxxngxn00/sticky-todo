@@ -55,6 +55,26 @@ def export_markdown(
     return "\n".join(lines) + "\n"
 
 
+def export_sections(
+    sections: Iterable[tuple[str, Iterable[Todo]]],
+    title: str = DEFAULT_TITLE,
+    today: date | None = None,
+) -> str:
+    """여러 날을 한 파일로: 날짜마다 '## 소제목' 아래 체크리스트 (주간·월간 내보내기).
+
+    불러오기는 체크리스트 줄만 읽으므로 소제목이 있어도 그대로 다시 불러올 수 있다.
+    """
+    today = today or date.today()
+    title = " ".join(title.split()) or DEFAULT_TITLE
+    lines = [f"# {title}", f"_{today.isoformat()} 내보냄_"]
+    for heading, todos in sections:
+        lines += ["", f"## {' '.join(heading.split())}"]
+        for t in todos:
+            mark = "x" if t.done else " "
+            lines.append(f"{INDENT_UNIT * t.indent}- [{mark}] {' '.join(t.text.split())}")
+    return "\n".join(lines) + "\n"
+
+
 def sanitize_filename(name: str, fallback: str = "할 일") -> str:
     name = _FORBIDDEN.sub("_", name)
     name = " ".join(name.split()).rstrip(". ")
