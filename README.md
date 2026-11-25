@@ -1,103 +1,168 @@
-# Sticky Todo
+<p align="center">
+  <img src="docs/images/icon.png" width="72" alt="">
+</p>
 
-윈도우 바탕화면에 스티키 노트처럼 떠 있는 할 일 목록 위젯.
-날짜별 페이지, 하위 할 일, 완료 항목 보관함, 전체 검색 창, 텍스트 파일 저장/불러오기를 지원한다.
-인터넷에 연결하지 않으며, 데이터는 내 PC에만 저장된다.
+<h1 align="center">Sticky Todo</h1>
 
-## 설치
+<p align="center">
+  바탕화면 한쪽에 포스트잇처럼 붙여 두는 할 일 목록이에요.<br>
+  오늘 할 일부터 이번 주, 이번 달까지 한눈에 보고, 못 끝낸 일은 쓱 끌어서 다른 날로 넘기면 돼요.
+</p>
 
-1. **[StickyTodo-Setup.exe 받기](https://github.com/jxxngxn00/sticky-todo/releases/latest/download/StickyTodo-Setup.exe)** 후 실행한다.
-   - 브라우저가 "일반적으로 다운로드되지 않는 파일"이라고 하면 **⋯ → 유지**.
-   - 파란 **"Windows의 PC 보호"** 창이 뜨면 **추가 정보 → 실행**
-     (코드 서명을 하지 않은 프로그램이라 뜨는 경고).
-2. **다음 → 설치**. 관리자 권한은 필요 없다.
-   - 내 계정 폴더(`%LOCALAPPDATA%\Programs\StickyTodo`)에 설치되고 시작 메뉴에 등록된다.
-   - 바탕화면 바로가기, 윈도우 시작 시 자동 실행은 설치 화면에서 고른다.
-3. **업데이트**: 새 Setup을 받아 실행하면 덮어써진다 (할 일은 그대로).
-4. **삭제**: 설정 → 앱 → Sticky Todo → 제거. 할 일 데이터까지 지울지 물어본다.
+<p align="center">
+  <a href="https://github.com/jxxngxn00/sticky-todo/releases/latest"><img src="https://img.shields.io/github/v/release/jxxngxn00/sticky-todo?label=%EC%B5%9C%EC%8B%A0%20%EB%B2%84%EC%A0%84" alt="최신 버전"></a>
+  <a href="https://github.com/jxxngxn00/sticky-todo/actions/workflows/build.yml"><img src="https://github.com/jxxngxn00/sticky-todo/actions/workflows/build.yml/badge.svg" alt="빌드"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue" alt="MIT"></a>
+  <img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows 10, 11">
+</p>
 
-설치 없이 쓰고 싶으면 릴리즈의 `StickyTodo.exe`(단독 실행 파일)를 받아 전용 폴더에 두고 실행해도 된다.
-받은 파일이 진짜인지는 함께 올라간 `.sha256` 값과 비교해 확인할 수 있다.
+<p align="center">
+  <a href="https://github.com/jxxngxn00/sticky-todo/releases/latest/download/StickyTodo-Setup.exe"><b>설치 프로그램 받기 (StickyTodo-Setup.exe)</b></a>
+</p>
+
+<p align="center">
+  <img src="docs/images/hero.png" width="640" alt="노랑 노트의 주간 보기와 iOS 색 노트의 월간 보기">
+</p>
+
+<p align="center">
+  인터넷에 연결하지 않아요. 적은 내용은 모두 내 PC에만 저장돼요.
+</p>
+
+## 이렇게 써요
+
+|  |  |
+|---|---|
+| <img src="docs/images/day.png" width="300" alt="하루 보기"> | **오늘 할 일**<br>아래 칸에 적고 Enter만 누르면 끝이에요.<br>Tab을 누르면 하위 할 일이 되고, 고치고 싶을 땐 더블클릭하면 돼요.<br>어제 못 끝낸 일이 있으면 위에 알려줘요. **가져오기**를 누르면 오늘로 한 번에 옮겨와요. |
+| <img src="docs/images/week.png" width="300" alt="주간 보기"> | **이번 주** (Ctrl+2)<br>일요일부터 토요일까지 날짜별로 이어서 보여줘요.<br>날짜를 누르면 그 날에 바로 적을 수 있고,<br>할 일을 **다른 날로 끌어다 놓으면** 그 날로 옮겨져요. |
+| <img src="docs/images/month.png" width="300" alt="월간 보기"> | **이번 달** (Ctrl+3)<br>주황 점은 아직 남은 일, 회색 점은 끝낸 일이에요.<br>날짜를 누르면 아래에 그 날 할 일이 나오고,<br>할 일을 달력 날짜 위로 끌어다 놓으면 그 날로 옮겨져요. |
+| <img src="docs/images/month-calendar.png" width="300" alt="달력만 보기"> | **달력만 보고 싶을 때**<br>[목록 숨기기]를 누르거나 노트를 낮게 줄이면 달력만 남아요.<br>바탕화면 구석에 작은 달력처럼 두기 좋아요. |
+
+**넓은 화면에서는 주간 보드로** · 주간 보기에서 노트를 가로로 넉넉하게(960px 이상) 늘리면
+일주일이 7칸 보드로 펼쳐져요. 칸을 누르면 그 날이 골라지고, 칸 사이로 끌어서 날짜를 옮길 수 있어요.
+
+<p align="center"><img src="docs/images/board.png" width="820" alt="주간 보드"></p>
+
+**좋아하는 색으로** · 노랑, 분홍, 하늘, 민트, iOS 중에 골라 보세요 (☰ → 색상).
+설정에서 색을 직접 골라도 날짜나 안내 글자가 흐려져서 안 보이는 일이 없도록, 배경에 맞춰 글자 진하기를 알아서 맞춰줘요.
+
+<p align="center"><img src="docs/images/presets.png" width="820" alt="색 프리셋 5가지"></p>
+
+## 설치하기
+
+1. 위의 **[설치 프로그램 받기](https://github.com/jxxngxn00/sticky-todo/releases/latest/download/StickyTodo-Setup.exe)** 를 눌러서 받은 파일을 실행해 주세요.
+   - 브라우저가 "일반적으로 다운로드되지 않는 파일"이라고 하면 **⋯ → 유지**를 눌러 주세요.
+   - 파란 **"Windows의 PC 보호"** 창이 뜨면 **추가 정보 → 실행**을 누르면 돼요.
+     개인이 만든 프로그램이라 코드 서명이 없어서 뜨는 안내예요.
+2. **다음 → 설치**를 누르면 끝이에요. 관리자 권한은 필요 없어요.
+   - 내 계정 폴더(`%LOCALAPPDATA%\Programs\StickyTodo`)에 설치되고 시작 메뉴에도 생겨요.
+   - 바탕화면 바로가기와 윈도우 켤 때 자동 실행은 설치 화면에서 고를 수 있어요.
+3. **업데이트**할 때는 새 설치 파일을 받아서 다시 실행하면 돼요. 적어 둔 할 일은 그대로 남아요.
+4. **지우고 싶을 때**는 설정 → 앱 → Sticky Todo → 제거. 할 일 데이터까지 지울지 한 번 더 물어봐요.
+
+<details>
+<summary>설치 없이 쓰고 싶어요 · 받은 파일이 진짜인지 확인하고 싶어요</summary>
+
+- 릴리즈의 `StickyTodo.exe`(실행 파일 하나짜리)를 받아서 원하는 폴더에 두고 실행해도 돼요.
+- 받은 파일이 원본 그대로인지는 같이 올라간 `.sha256` 값과 비교해 보면 알 수 있어요.
 
 ```powershell
 Get-FileHash .\StickyTodo-Setup.exe -Algorithm SHA256
 ```
+</details>
 
 ## 사용법
 
-| 하고 싶은 것 | 방법 |
+헷갈릴 땐 노트에서 **F1**을 눌러 보세요. 단축키와 마우스로 할 수 있는 것들을 모아 뒀어요.
+
+<p align="center"><img src="docs/images/help.png" width="480" alt="도움말 창의 단축키 탭"></p>
+
+| 이럴 땐 | 이렇게 |
 |---|---|
-| 할 일 추가 | 아래 입력칸에 쓰고 Enter (Tab: 하위 할 일) |
-| 고치기 / 하위 할 일로 | 더블클릭 / Tab (상위로 꺼내기: Shift+Tab) |
-| 내일로 미루기·보관·삭제 | 할 일 우클릭 |
-| 실수로 지웠을 때 | 아래 알림의 **되돌리기**(10초), ☰ → 방금 지운 것 되돌리기, 또는 Ctrl+Z |
-| 날짜 넘기기 | 제목 바 ‹ › 또는 Alt+← / Alt+→, 날짜 더블클릭 = 오늘 |
-| 일 · 주 · 월 보기 | 제목 바 아래 **일 / 주 / 월** 또는 Ctrl+1 / 2 / 3 |
-| 다른 날로 옮기기 | 주간·보드·달력에서 다른 날로 끌어다 놓기, 또는 우클릭 → 다른 날로 옮기기 |
-| 도움말 · 단축키 | **F1** 또는 ☰ → 도움말 · 단축키 |
-| 전체 목록·검색 | ☰ → 전체 목록 보기 또는 Ctrl+Shift+L |
-| 어디서든 노트 불러오기 | **Ctrl+Alt+T** (다른 프로그램 사용 중에도, 설정 → 목록 동작에서 끌 수 있음) |
-| 노트 숨기기 / 다시 보기 | ✕ → 트레이로 숨김, 트레이 아이콘 클릭으로 다시 보기 |
-| 종료 | ☰ → 종료, 또는 트레이 아이콘 우클릭 → 종료 |
-| 윈도우 켤 때 자동 실행 | ☰ 또는 트레이 메뉴 → 시작 시 자동 실행 |
+| 할 일 적기 | 아래 칸에 쓰고 Enter (Tab을 누르면 하위 할 일) |
+| 고치기 / 하위 할 일로 | 더블클릭 / Tab (다시 꺼낼 땐 Shift+Tab) |
+| 내일로 미루기, 다른 날로, 보관, 삭제 | 할 일에서 우클릭 |
+| 다른 날로 옮기기 | 주간·보드·달력에서 다른 날로 끌어다 놓기 |
+| 실수로 지웠어요 | 아래 알림의 **되돌리기**(10초 동안), ☰ → 방금 지운 것 되돌리기, 또는 Ctrl+Z |
+| 하루 · 주 · 달 바꿔 보기 | 제목 아래 **일 / 주 / 월**, 또는 Ctrl+1 / 2 / 3 |
+| 날짜 넘기기 | 제목 옆 ‹ ›, 또는 Alt+← / Alt+→ (제목을 더블클릭하면 오늘로) |
+| 예전 할 일 찾기, 보관함 | ☰ → 전체 목록 보기, 또는 Ctrl+Shift+L |
+| 다른 프로그램 쓰다가 바로 열기 | **Ctrl+Alt+T** (설정 → 목록 동작에서 끌 수 있어요) |
+| 잠깐 숨기기 / 다시 보기 | ✕를 누르면 작업표시줄 트레이로 숨어요. 트레이 아이콘을 누르면 다시 나와요 |
+| 완전히 끄기 | ☰ → 종료, 또는 트레이 아이콘 우클릭 → 종료 |
+| 윈도우 켤 때 같이 켜기 | ☰ 또는 트레이 메뉴 → 시작 시 자동 실행 |
 
-- 윈도우 11은 새 트레이 아이콘을 작업표시줄의 **^(숨겨진 아이콘)** 안에 넣는다.
+<details>
+<summary>트레이 아이콘이 안 보여요 · 자동 실행은 어떻게 되나요</summary>
+
+- 윈도우 11은 새 트레이 아이콘을 작업표시줄의 **^(숨겨진 아이콘)** 안에 넣어 둬요.
   항상 보이게 하려면 아이콘을 작업표시줄로 끌어다 놓거나,
-  설정 → 개인 설정 → 작업 표시줄 → 기타 시스템 트레이 아이콘에서 Sticky Todo를 켠다.
-- 자동 실행은 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`에 exe 경로를 등록한다
-  (관리자 권한 불필요). exe를 다른 폴더로 옮기면 다음 실행 때 경로가 자동으로 고쳐진다.
+  설정 → 개인 설정 → 작업 표시줄 → 기타 시스템 트레이 아이콘에서 Sticky Todo를 켜 주세요.
+- 자동 실행은 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`에 프로그램 위치를 적어 두는 방식이에요
+  (관리자 권한 필요 없음). 프로그램을 다른 폴더로 옮겨도 다음에 켤 때 위치를 알아서 고쳐요.
+</details>
 
-## 데이터 저장 위치
+## 조금 더 자세히
 
-- 기본: `%APPDATA%\StickyTodo\`
-  - `todos.json` 할 일, `settings.json` 설정, `backups\` 이전 버전 (최근 5개)
-- 포터블 모드: exe와 같은 폴더에 `portable`이라는 빈 파일을 두면 그 폴더의 `data\`에 저장
-- `todos.json`이 손상되면 `backups\`의 최신 정상본으로 자동 복구하고, 손상된 파일은
-  `todos.json.corrupt-날짜`로 따로 보관한다.
-- 할 일은 **암호화하지 않은 텍스트**로 저장된다. 비밀번호 같은 민감한 정보는 적지 않는다.
+<details>
+<summary>하위 할 일</summary>
 
-## 기능 메모
+- 몇 단계든 들여쓸 수 있어요. 위 항목을 옮기거나 지우면 하위 항목도 같이 따라가요.
+- 완료 체크는 누른 항목만 바뀌어요. 위 항목을 끝냈다고 하위 항목까지 끝나진 않아요.
+- 텍스트 파일(`- [ ] 할 일` 같은 체크리스트 형식)로 저장할 땐 한 단계에 공백 2칸으로 써요.
+  불러올 땐 공백 2칸, 4칸, 탭 모두 알아들어요.
+</details>
 
-### 하위 할 일
-- 깊이 제한 없음. 부모를 옮기거나 지우면 하위 항목도 같이 움직인다. 완료 체크는 그 항목만 바뀐다.
-- 텍스트 파일(체크리스트 `- [ ] 할 일` 형식)로 저장할 때 한 단계당 공백 2칸. 불러올 때는 공백 2칸·4칸·탭을 모두 인식한다.
+<details>
+<summary>날짜별 페이지 · 주간 · 월간</summary>
 
-### 날짜별 페이지
-- 내일 페이지에 미리 쓸 수 있고, 자정이 지나면 노트가 새 '오늘'로 넘어간다.
-- 지난 날 못 끝낸 일은 그 날짜에 남고, 오늘 페이지 위에 **가져오기** 배너가 뜬다.
+- 내일이나 다음 주 페이지에 미리 적어 둘 수 있어요. 자정이 지나면 노트가 알아서 새 '오늘'로 넘어가요.
+- 못 끝낸 일은 그 날짜에 그대로 남아 있고, 오늘 페이지 위에 **가져오기** 알림이 떠요.
+- 날짜를 더블클릭하면 그 날 하루 보기로 바로 가요.
+- 노트 크기는 하루·주간·월간마다 따로 기억해요. 주간은 넓게, 하루는 작게 둘 수 있어요.
+- 텍스트 파일로 저장하거나 복사하면 지금 보고 있는 범위(하루 / 한 주 / 한 달)가 날짜별로 정리돼서 나가요.
+</details>
 
-### 주간 · 월간 보기
-- **주간**: 일요일~토요일을 날짜별로 이어서 보여준다. 노트를 **960px 이상**으로 넓히면 가로 7칸 보드가 된다.
-  날짜(보드는 칸)를 누르면 그 날이 골라지고, 아래 입력칸이 그 날에 추가한다.
-- **월간**: 달력(주황 점 = 남은 일, 회색 점 = 끝낸 일) + 고른 날 목록. 할 일을 달력 날짜로 끌어다 놓으면 그 날로 옮겨진다.
-- 날짜를 더블클릭하면 그 날 하루 보기로 간다. 노트 크기는 보기마다 따로 기억한다.
-- 텍스트 파일 저장·복사는 보고 있는 범위(하루 / 한 주 / 한 달) 전체를 날짜별 소제목과 함께 내보낸다.
+<details>
+<summary>끝낸 일 보관하기</summary>
 
-### 완료 항목 보관
-- ☰ → **완료 항목 보관**, 또는 날짜가 바뀌면 전날까지 완료한 항목을 자동 보관 (설정에서 끌 수 있음).
-- 관리 창의 **보관됨** 필터에서 검색·내보내기·노트로 복원·완전 삭제.
+- ☰ → **완료 항목 보관**을 누르면 끝낸 일이 보관함으로 들어가요.
+  날짜가 바뀔 때 어제까지 끝낸 일을 알아서 보관하기도 해요 (설정에서 끌 수 있어요).
+- 보관한 일은 지워진 게 아니에요. 전체 목록 창의 **보관됨**에서 찾아보고, 노트로 되돌리거나 완전히 지울 수 있어요.
+</details>
 
-### 텍스트 파일 불러오기 (보안)
-- `- [ ]`, `- [x]`, `* [ ]` 형식의 줄만 할 일로 읽고, 내용은 글자 그대로만 보여준다 (HTML 해석 안 함).
-- 파일은 1MB까지, 한 번에 200개까지 불러온다 (50개 넘으면 먼저 확인).
+<details>
+<summary>텍스트 파일 불러오기는 안전한가요</summary>
 
-## 개발
+- `- [ ]`, `- [x]`, `* [ ]`로 시작하는 줄만 할 일로 읽어요. 내용은 글자 그대로만 보여주고, 링크나 그림 같은 건 해석하지 않아요.
+- 파일은 1MB까지, 한 번에 200개까지 불러와요. 50개가 넘으면 먼저 물어봐요.
+</details>
 
-Python은 [uv](https://docs.astral.sh/uv/)로 관리한다.
+## 내 할 일은 어디에 저장되나요
+
+- `%APPDATA%\StickyTodo\` 폴더에 있어요.
+  - `todos.json`은 할 일, `settings.json`은 설정, `backups\`는 최근 백업 5개예요.
+- exe와 같은 폴더에 `portable`이라는 빈 파일을 만들어 두면, 그 폴더 안 `data\`에 저장해요 (USB에 넣고 다닐 때 좋아요).
+- `todos.json`이 망가지면 가장 최근의 멀쩡한 백업으로 알아서 되살려요. 망가진 파일은 `todos.json.corrupt-날짜`로 따로 남겨 둬요.
+- 할 일은 **암호화하지 않은 글자 그대로** 저장돼요. 비밀번호 같은 민감한 내용은 적지 말아 주세요.
+
+## 직접 고쳐 보고 싶다면
+
+Python은 [uv](https://docs.astral.sh/uv/)로 관리해요.
 
 ```powershell
-winget install astral-sh.uv   # 최초 1회
-uv sync                        # Python 3.12 + 의존성 설치
-uv run sticky-todo             # 실행
-uv run pytest                  # 테스트
-uv run ruff check .            # 린트
-uv run ruff format .           # 포맷
-uv run pip-audit               # 의존성 취약점 점검
-uv run python tools/build.py   # exe·설치 프로그램 빌드 → dist\ (Inno Setup 6 있으면 Setup.exe도)
+winget install astral-sh.uv          # 처음 한 번
+uv sync                               # Python 3.12와 필요한 패키지 설치
+uv run sticky-todo                    # 실행
+uv run pytest                         # 테스트
+uv run ruff check .                   # 린트
+uv run ruff format .                  # 코드 정리
+uv run pip-audit                      # 패키지 보안 점검
+uv run python tools/build.py          # exe·설치 프로그램 만들기 → dist\ (Inno Setup 6이 있으면 Setup.exe까지)
+uv run python tools/screenshots.py    # README 사진 다시 만들기 → docs\images\ (예시 할 일로)
 ```
 
-`todos.json` 스키마는 v3 (각 할 일에 `day`, 보관함은 `archive`). v1·v2 파일은 읽을 때 자동 변환된다.
+`todos.json` 형식은 v3예요 (할 일마다 `day`가 있고, 보관함은 `archive`). 예전 v1·v2 파일은 읽을 때 알아서 바꿔요.
 
 ## 라이선스
 
-MIT ([LICENSE](LICENSE)). 함께 묶인 PySide6(LGPL-3.0)·Pretendard(OFL-1.1) 등은 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) 참고.
+MIT ([LICENSE](LICENSE))예요. 함께 들어 있는 PySide6(LGPL-3.0), Pretendard(OFL-1.1) 같은 것들은 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt)에 정리해 뒀어요.
