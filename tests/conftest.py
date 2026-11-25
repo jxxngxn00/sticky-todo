@@ -52,3 +52,13 @@ def store(make_store):
 def tree(store):
     """[(text, indent), ...] 로 현재 상태 확인용."""
     return [(t.text, t.indent) for t in store.todos()]
+
+
+def local_iso(*args) -> str:
+    """이 PC(또는 CI 서버) 시간대 기준 ISO 시각.
+
+    날짜 경계를 다루는 테스트에 '+09:00'을 박으면 UTC인 CI 서버에서 날짜가 어긋난다.
+    """
+    from datetime import datetime
+
+    return datetime(*args).astimezone().isoformat(timespec="seconds")

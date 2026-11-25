@@ -421,12 +421,16 @@ def test_archive_restore_and_query(store):
 
 
 def test_archive_before_date_only_older(store):
-    from datetime import date
+    from datetime import date, datetime
+
+    def local(*args):
+        """이 PC 시간대 기준 시각 (CI 서버는 UTC라 +09:00을 박아두면 날짜가 어긋난다)."""
+        return datetime(*args).astimezone().isoformat(timespec="seconds")
 
     ids = build(store, [("어제", 0), ("오늘", 0), ("미완", 0)])
     store.set_done_many([ids["어제"], ids["오늘"]], True)
-    store._todos[0].completed_at = "2026-11-23T23:59:00+09:00"
-    store._todos[1].completed_at = "2026-11-24T00:01:00+09:00"
+    store._todos[0].completed_at = local(2026, 11, 23, 23, 59)
+    store._todos[1].completed_at = local(2026, 11, 24, 0, 1)
     assert store.archive_completed(before=date(2026, 11, 24)) == 1
     assert [t.text for t in store.todos()] == ["오늘", "미완"]
 

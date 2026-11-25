@@ -29,7 +29,10 @@ jobs:
           uv run ruff check .
           uv run ruff format --check .
       - name: 테스트
-        run: uv run pytest -q
+        run: uv run pytest -q --junitxml=pytest-report.xml
+      - name: 실패한 테스트를 annotation으로 남기기
+        if: failure()
+        run: uv run python tools/ci_annotate.py pytest-report.xml
       - name: 의존성 취약점 점검
         run: uv run pip-audit --skip-editable
 

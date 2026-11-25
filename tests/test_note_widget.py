@@ -188,8 +188,10 @@ def test_auto_archive_on_new_day(note, store):
     store.add("안 끝난 일")
     store.set_done(a.id, True)
     store.set_done(b.id, True)
-    store._todos[0].completed_at = "2026-11-23T18:00:00+09:00"
-    store._todos[1].completed_at = "2026-11-24T09:00:00+09:00"
+    from conftest import local_iso
+
+    store._todos[0].completed_at = local_iso(2026, 11, 23, 18, 0)
+    store._todos[1].completed_at = local_iso(2026, 11, 24, 9, 0)
     assert note.auto_archive(today=date(2026, 11, 24)) == 1
     assert [t.text for t in store.todos()] == ["오늘 끝낸 일", "안 끝난 일"]
     assert "지난 날" in note.toast_label.text()
