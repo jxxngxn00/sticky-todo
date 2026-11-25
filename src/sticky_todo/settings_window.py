@@ -85,6 +85,7 @@ class ColorButton(QPushButton):
         super().__init__(parent)
         self._title = title
         self._color = "#FFFFFF"
+        self.setObjectName("colorSwatch")
         self.setFixedSize(44, 24)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setToolTip(f"{title} 직접 고르기")
@@ -95,13 +96,15 @@ class ColorButton(QPushButton):
 
     def set_color(self, color: str) -> None:
         self._color = color.upper()
+        # 이 견본 버튼에만 적용 (선택자 없이 'QPushButton'으로 쓰면 자식 창의 버튼까지 물든다)
         self.setStyleSheet(
-            f"QPushButton {{ background: {self._color}; border: 1px solid #888;"
+            f"QPushButton#colorSwatch {{ background: {self._color}; border: 1px solid #888;"
             f" border-radius: 4px; }}"
         )
 
     def _pick(self) -> None:
-        dlg = ColorPickerDialog(self._color, self._title, self)
+        # 견본 버튼이 아니라 설정 창을 부모로 연다 (견본 스타일이 번지지 않게)
+        dlg = ColorPickerDialog(self._color, self._title, self.window())
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self.set_color(dlg.selected_color())
             self.color_picked.emit(self._color)

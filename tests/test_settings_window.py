@@ -125,3 +125,28 @@ def test_color_picker_uses_same_buttons(win):
         assert d.cancel_btn.x() < d.ok_btn.x()
         assert d.ok_btn.geometry().right() > d.width() - 40
     dlg.close()
+
+
+def test_color_picker_buttons_not_tinted_by_swatch(win, monkeypatch):
+    """견본 버튼의 배경색이 색 선택 창의 취소/확인 버튼에 번지면 안 된다."""
+    from PySide6.QtWidgets import QDialog
+
+    from sticky_todo.settings_window import ColorPickerDialog
+
+    opened = []
+
+    def fake_exec(self):
+        opened.append(self)
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(ColorPickerDialog, "exec", fake_exec)
+    swatch = win.color_buttons["accent_color"]
+    swatch.click()
+    dlg = opened[0]
+    assert dlg.parentWidget() is win  # 견본 버튼의 자식이 아님
+    assert "#colorSwatch" in swatch.styleSheet()  # 선택자로 견본 자신에게만
+    for btn in (dlg.cancel_btn, dlg.ok_btn):
+        btn.ensurePolished()
+        bg = btn.palette().color(btn.backgroundRole()).name().upper()
+        assert bg != win.settings["accent_color"]
+        assert btn.width() > 44 or btn.sizeHint().width() > 44  # 견본 크기로 줄지 않음
