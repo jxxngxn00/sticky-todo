@@ -81,3 +81,7 @@ uv run python tools/build.py   # exe 빌드 → dist\StickyTodo.exe (+ .sha256)
 ```
 
 `todos.json` 스키마는 v3 (각 할 일에 `day`, 보관함은 `archive`). v1·v2 파일은 읽을 때 자동 변환된다.
+
+## 라이선스
+
+MIT ([LICENSE](LICENSE)). 함께 묶인 PySide6(LGPL-3.0)·Pretendard(OFL-1.1) 등은 [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) 참고.

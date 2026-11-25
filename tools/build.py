@@ -92,6 +92,7 @@ def make_zip(exe: Path) -> Path:
         exe.with_name(exe.name + ".sha256"): exe.name + ".sha256",
         ROOT / "README.md": "README.md",
         ROOT / "THIRD-PARTY-NOTICES.txt": "THIRD-PARTY-NOTICES.txt",
+        ROOT / "LICENSE": "LICENSE.txt",
         ROOT / "licenses" / "Pretendard-OFL.txt": "licenses/Pretendard-OFL.txt",
     }
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
