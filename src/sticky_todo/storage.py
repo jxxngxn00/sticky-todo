@@ -27,6 +27,7 @@ from typing import Any
 from PySide6.QtCore import QObject, QTimer, Signal
 
 from .fileio import atomic_write_text
+from .inline_md import plain
 
 CURRENT_VERSION = 3  # v2: 보관함(archive), v3: 날짜별 페이지(day)
 SAVE_DEBOUNCE_MS = 300
@@ -272,6 +273,11 @@ class SortKey(StrEnum):
     MANUAL = "manual"  # 날짜 → 페이지 순서
 
 
+def _matches(text: str, needle: str) -> bool:
+    """검색: 꾸밈 기호를 뺀 글자로 찾는다 ('중요 회의' → '**중요** 회의'). 기호로 찾아도 된다."""
+    return needle in plain(text).casefold() or needle in text.casefold()
+
+
 def _ts(value: str | None) -> float:
     if not value:
         return float("-inf")
@@ -410,7 +416,7 @@ class TodoStore(QObject):
         result = [
             replace(t)
             for t in source
-            if (not needle or needle in t.text.casefold())
+            if (not needle or _matches(t.text, needle))
             and (status in (Status.ALL, Status.ARCHIVED) or t.done == (status is Status.DONE))
         ]
         if sort is SortKey.CREATED_DESC:
@@ -424,7 +430,7 @@ class TodoStore(QObject):
                 reverse=True,
             )
         elif sort is SortKey.ALPHA:
-            result.sort(key=lambda t: (t.text.casefold(), pos[t.id]))
+            result.sort(key=lambda t: (plain(t.text).casefold(), pos[t.id]))
         return result
 
     def has_children(self, todo_id: str) -> bool:

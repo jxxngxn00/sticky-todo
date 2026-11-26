@@ -56,7 +56,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import icons, markdown_io
+from . import icons, inline_md, markdown_io
 from .autostart import Autostart
 from .holidays import Holiday, holiday
 from .month_view import Cell, MonthCalendar
@@ -484,6 +484,34 @@ class CheckButton(QAbstractButton):
 # ---------------------------------------------------------------- 할 일 한 줄
 
 
+FORMAT_KEYS = {Qt.Key.Key_B: "**", Qt.Key.Key_I: "*", Qt.Key.Key_U: "__"}  # 굵게·기울임·밑줄
+
+
+def apply_format_key(edit: QLineEdit, e: QKeyEvent) -> bool:
+    """Ctrl+B / I / U: 고른 글자를 **·*·__로 감싸거나 푼다. 처리했으면 True.
+
+    고른 글자가 없으면 기호 한 쌍을 넣고 커서를 가운데에. Ctrl+Z로 되돌릴 수 있게 insert로 바꾼다.
+    """
+    if e.modifiers() != Qt.KeyboardModifier.ControlModifier or edit.isReadOnly():
+        return False
+    marker = FORMAT_KEYS.get(Qt.Key(e.key()))
+    if marker is None:
+        return False
+    if edit.hasSelectedText():
+        start = edit.selectionStart()
+        end = start + len(edit.selectedText())
+    else:
+        start = end = edit.cursorPosition()
+    text, s, t = inline_md.toggle_wrap(edit.text(), start, end, marker)
+    edit.selectAll()
+    edit.insert(text)
+    if t > s:
+        edit.setSelection(s, t - s)
+    else:
+        edit.setCursorPosition(s)
+    return True
+
+
 class WrapLabel(QLabel):
     """줄바꿈 라벨. 실제 너비 기준으로 높이를 알려준다.
 
@@ -492,14 +520,27 @@ class WrapLabel(QLabel):
     """
 
     def __init__(self, text: str, parent: QWidget | None = None) -> None:
-        super().__init__(text, parent)
-        # 할 일 내용은 글자 그대로만 보여준다. 기본값(AutoText)이면 '<img src=…>' 같은
-        # HTML을 해석해서 PC의 파일을 읽어 그리거나 화면을 망가뜨릴 수 있다.
-        self.setTextFormat(Qt.TextFormat.PlainText)
+        super().__init__(parent)
         self.setWordWrap(True)
+        self.set_todo_text(text)
         sp = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         sp.setHeightForWidth(True)
         self.setSizePolicy(sp)
+
+    def set_todo_text(self, text: str) -> None:
+        """할 일 글자. **굵게** 같은 꾸밈이 있으면 서식으로, 없으면 글자 그대로.
+
+        서식은 inline_md.to_html이 할 일 글자를 전부 이스케이프하고 b·i·u·s만 넣은 것.
+        기본값(AutoText)이나 할 일 글자를 그대로 RichText로 넣으면 '<img src=…>' 같은
+        HTML을 해석해서 PC의 파일을 읽어 그리거나 화면을 망가뜨릴 수 있다.
+        """
+        if inline_md.has_format(text):
+            self.setTextFormat(Qt.TextFormat.RichText)
+            self.setText(inline_md.to_html(text))
+        else:
+            self.setTextFormat(Qt.TextFormat.PlainText)
+            self.setText(text)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.NoTextInteraction)
 
     def _height(self) -> int:
         if self.width() > 0:
@@ -653,9 +694,10 @@ class TodoRow(QWidget):
         self.check.toggled.connect(lambda on: self.toggled.emit(self.todo.id, on))
         lay.addWidget(self.check, 0, Qt.AlignmentFlag.AlignTop)
 
-        self.label = WrapLabel(todo.text, self)
+        self.label = WrapLabel("", self)
         self.label.setProperty("dim", dim)  # QSS: 흐린 글자색
         self.label.setProperty("strike", strike)  # QSS: 취소선
+        self.label.set_todo_text(todo.text)
         lay.addWidget(self.label, 1)
 
         self.editor = QLineEdit(self)
@@ -730,6 +772,8 @@ class TodoRow(QWidget):
     def eventFilter(self, obj, event) -> bool:  # noqa: N802
         if obj is self.editor and event.type() == QEvent.Type.KeyPress:
             key = event.key()
+            if apply_format_key(self.editor, event):
+                return True
             if key == Qt.Key.Key_Escape:
                 self.finish_edit(commit=False)
                 self.edit_closed.emit()
@@ -1604,6 +1648,8 @@ class TodoInput(QLineEdit):
     def event(self, e) -> bool:
         if e.type() == QEvent.Type.KeyPress and e.key() in (Qt.Key.Key_Tab, Qt.Key.Key_Backtab):
             self.set_level(self.level + (1 if e.key() == Qt.Key.Key_Tab else -1))
+            return True
+        if e.type() == QEvent.Type.KeyPress and apply_format_key(self, e):
             return True
         return super().event(e)
 

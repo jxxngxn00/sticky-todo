@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import html
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,13 +26,16 @@ from PySide6.QtCore import (
     Signal,
 )
 from PySide6.QtGui import (
+    QAbstractTextDocumentLayout,
     QColor,
     QGuiApplication,
     QKeySequence,
     QMouseEvent,
     QPainter,
+    QPalette,
     QPen,
     QShortcut,
+    QTextDocument,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -55,8 +59,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import date_picker, icons, markdown_io
-from .note_widget import CheckButton, day_label, quick_move_days
+from . import date_picker, icons, inline_md, markdown_io
+from .note_widget import CheckButton, apply_format_key, day_label, quick_move_days
 from .paths import default_export_dir
 from .storage import SortKey, Status, Todo, TodoStore
 
@@ -66,6 +70,7 @@ if TYPE_CHECKING:
 COL_SELECT, COL_DONE, COL_TEXT, COL_DAY, COL_CREATED, COL_COMPLETED = range(6)
 HEADERS = ["", "완료", "내용", "날짜", "만든 날", "완료한 날"]
 PARENT_ROLE = Qt.ItemDataRole.UserRole + 1
+HTML_ROLE = Qt.ItemDataRole.UserRole + 2  # 꾸밈(**굵게** 등)이 있으면 그릴 HTML
 SORT_OPTIONS = [
     (SortKey.CREATED_DESC, "최근 추가순"),
     (SortKey.CREATED_ASC, "오래된순"),
@@ -79,6 +84,7 @@ STATUS_OPTIONS = [
     (Status.ARCHIVED, "보관됨"),
 ]
 TOAST_MS = 10_000
+TEXT_MARGIN = 4  # 꾸민 글자를 직접 그릴 때 왼쪽 여백 (스타일이 그리는 보통 글자와 맞춤)
 _ROOT = QModelIndex()
 
 
@@ -107,7 +113,7 @@ def parent_names(todos: list[Todo]) -> dict[str, str]:
         while stack and stack[-1].indent >= t.indent:
             stack.pop()
         if stack:
-            result[t.id] = stack[-1].text
+            result[t.id] = inline_md.plain(stack[-1].text)
         stack.append(t)
     return result
 
@@ -172,9 +178,13 @@ class TodoTableModel(QAbstractTableModel):
                 return Qt.CheckState.Checked if on else Qt.CheckState.Unchecked
             if col == COL_DONE:
                 return Qt.CheckState.Checked if t.done else Qt.CheckState.Unchecked
+        if col == COL_TEXT and role == Qt.ItemDataRole.EditRole:
+            return t.text  # 고칠 때는 기호까지 그대로
+        if col == COL_TEXT and role == HTML_ROLE:
+            return inline_md.to_html(t.text) if inline_md.has_format(t.text) else None
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
             if col == COL_TEXT:
-                return t.text
+                return inline_md.plain(t.text)
             if col == COL_DAY:
                 return day_label(t.day, short=True)
             if col == COL_CREATED:
@@ -185,7 +195,7 @@ class TodoTableModel(QAbstractTableModel):
             return self.parents.get(t.id)
         if role == Qt.ItemDataRole.ToolTipRole and col == COL_TEXT:
             parent = self.parents.get(t.id)
-            lines = [t.text]
+            lines = [inline_md.plain(t.text)]
             if parent:
                 lines.append(f"상위 항목: {parent}")
             if t.archived_at:
@@ -214,17 +224,27 @@ class TodoTableModel(QAbstractTableModel):
 
 
 class TextDelegate(QStyledItemDelegate):
+    """내용 칸: **굵게** 같은 꾸밈을 그리고, 하위 항목이면 뒤에 '‹ 부모'를 흐리게.
+
+    고칠 때(더블클릭)는 기호까지 그대로 보이는 입력칸이고, Ctrl+B / I / U로 꾸밀 수 있다.
+    """
+
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
-        parent = index.data(PARENT_ROLE)
-        super().paint(painter, option, index)
-        if not parent:
-            return
         opt = QStyleOptionViewItem(option)
         self.initStyleOption(opt, index)
-        text_rect = opt.widget.style().subElementRect(
-            QStyle.SubElement.SE_ItemViewItemText, opt, opt.widget
-        )
-        used = opt.fontMetrics.horizontalAdvance(opt.text) + 12
+        style = opt.widget.style()
+        text_rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, opt, opt.widget)
+        rich = index.data(HTML_ROLE)
+        if rich is None:
+            super().paint(painter, option, index)
+            used = opt.fontMetrics.horizontalAdvance(opt.text) + 12
+        else:
+            opt.text = ""  # 배경·선택 표시만 스타일이 그리고 글자는 직접
+            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
+            used = self._draw_rich(painter, opt, text_rect, rich) + 12
+        parent = index.data(PARENT_ROLE)
+        if not parent:
+            return
         rect = QRect(
             text_rect.left() + used, text_rect.top(), text_rect.width() - used, text_rect.height()
         )
@@ -239,6 +259,53 @@ class TextDelegate(QStyledItemDelegate):
             rect, int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), hint
         )
         painter.restore()
+
+    @staticmethod
+    def _draw_rich(painter: QPainter, opt: QStyleOptionViewItem, rect: QRect, rich: str) -> int:
+        """꾸민 글자를 칸 안에 그리고 차지한 폭을 돌려준다. 넘치면 끝을 '…'로."""
+        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
+        role = QPalette.ColorRole.HighlightedText if selected else QPalette.ColorRole.Text
+        color = opt.palette.color(role)
+        doc = QTextDocument()
+        doc.setDocumentMargin(0)
+        doc.setDefaultFont(opt.font)
+        doc.setHtml(rich)  # inline_md가 이스케이프한 글자 + b·i·u·s 태그뿐
+        margin = TEXT_MARGIN
+        avail = rect.width() - 2 * margin
+        width = math.ceil(doc.idealWidth())
+        ellipsis = "…"
+        overflow = width > avail
+        clip_w = avail - opt.fontMetrics.horizontalAdvance(ellipsis) if overflow else avail
+        painter.save()
+        top = rect.top() + (rect.height() - doc.size().height()) / 2
+        painter.translate(rect.left() + margin, top)
+        painter.setClipRect(QRectF(0, 0, max(clip_w, 0), doc.size().height()))
+        ctx = QAbstractTextDocumentLayout.PaintContext()
+        ctx.palette.setColor(QPalette.ColorRole.Text, color)
+        doc.documentLayout().draw(painter, ctx)
+        painter.restore()
+        if overflow:
+            painter.save()
+            painter.setPen(color)
+            x = rect.left() + margin + max(clip_w, 0)
+            painter.drawText(
+                QRect(x, rect.top(), rect.right() - x, rect.height()),
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft),
+                ellipsis,
+            )
+            painter.restore()
+            return avail + margin
+        return width + margin
+
+    def eventFilter(self, obj, event) -> bool:  # noqa: N802
+        # 고치는 중 Ctrl+B / I / U: 노트와 똑같이 **·*·__로 감싸기
+        if (
+            isinstance(obj, QLineEdit)
+            and event.type() == QEvent.Type.KeyPress
+            and apply_format_key(obj, event)
+        ):
+            return True
+        return super().eventFilter(obj, event)
 
 
 # ---------------------------------------------------------------- 체크 칸 (노트와 같은 모양)
