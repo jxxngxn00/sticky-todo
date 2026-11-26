@@ -58,6 +58,7 @@ from PySide6.QtWidgets import (
 
 from . import icons, markdown_io
 from .autostart import Autostart
+from .holidays import Holiday, holiday
 from .month_view import Cell, MonthCalendar
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
@@ -83,6 +84,8 @@ EMPTY_TIPS = (
 RING_ALPHA = 0.52
 DONE_TEXT_ALPHA = 0.55  # 완료 항목(취소선과 함께)
 INPUT_TINT_ALPHA = 0.12  # 입력칸 회색 깔기
+HOLIDAY_RED = "#B3261E"  # 일요일·공휴일 숫자 (대비가 모자라면 글자색)
+HOLIDAY_TINT_ALPHA = 0.12  # 공휴일 배지 바탕
 SHADOW_PX = 14  # 그림자 여백 (그림자를 꺼도 유지)
 SHADOW_OFFSET_Y = 3  # 그림자를 살짝 아래로
 SHADOW_MAX_ALPHA = 0.14  # 노트 가장자리 바로 바깥의 진하기
@@ -99,6 +102,12 @@ MAX_VISUAL_INDENT = 8  # 이보다 깊은 항목도 화면에서는 이만큼만
 def visual_indent(level: int) -> int:
     """아주 깊게 들여쓴 파일을 불러와도 줄 폭이 끝없이 넓어져 멈추지 않게."""
     return min(level, MAX_VISUAL_INDENT)
+
+
+def holiday_text_color(text: str, *backgrounds: str) -> str:
+    """공휴일 배지 글자: 옅은 빨강 바탕 위 빨간 글자. 어느 바탕에서든 4.5:1이 안 되면 글자색."""
+    tinted = [_mix(HOLIDAY_RED, bg, HOLIDAY_TINT_ALPHA) for bg in backgrounds]
+    return HOLIDAY_RED if all(contrast(HOLIDAY_RED, b) >= 4.5 for b in tinted) else text
 
 
 def _mix(a: str, b: str, t: float) -> str:
@@ -469,12 +478,18 @@ class ElideLabel(QLabel):
         self.sample = sample
         self.tip = tip  # 평소 툴팁. 글자가 잘리면 전체 글자를 툴팁으로
         self.setToolTip(tip)
+        # True면 지금 글자가 sample보다 짧을 때 그 글자 폭까지만 차지 (옆에 배지가 붙을 때)
+        self.fit_text = False
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
         width = self.MIN_WIDTH
         if self.sample:
+            fm = self.fontMetrics()
+            text = fm.horizontalAdvance(self.sample)
+            if self.fit_text and self.text():
+                text = min(text, fm.horizontalAdvance(self.text()))
             m = self.contentsMargins()
-            width = self.fontMetrics().horizontalAdvance(self.sample) + m.left() + m.right() + 2
+            width = text + m.left() + m.right() + 2
         return QSize(width, super().minimumSizeHint().height())
 
     def paintEvent(self, _event) -> None:  # noqa: N802
@@ -488,6 +503,52 @@ class ElideLabel(QLabel):
             p, rect, int(self.alignment()), self.palette(), self.isEnabled(), text,
             self.foregroundRole(),
         )  # fmt: skip
+
+
+class ElidePill(QLabel):
+    """둥근 배지 라벨. 자리가 모자라면 '부처…'처럼 줄어든다 (노트 최소 폭을 키우지 않게).
+
+    QSS 배경·여백이 그대로 그려지도록 글자만 줄여서 setText 한다. 전체 이름은 툴팁으로.
+    """
+
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.full = ""
+        self.set_full_text(text)
+
+    def set_full_text(self, text: str) -> None:
+        self.full = text
+        self.setToolTip(text)
+        super().setText(text)
+        self.updateGeometry()
+        self._elide()
+
+    def _extra(self) -> int:
+        fm = self.fontMetrics()
+        return fm.horizontalAdvance(self.full) - fm.horizontalAdvance(self.text())
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        s = super().sizeHint()
+        return QSize(s.width() + self._extra(), s.height())
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        # 적어도 앞 두 글자는 보이게 ('부처…'). '추석'처럼 짧으면 다 보인다
+        fm = self.fontMetrics()
+        short = self.full if len(self.full) <= 2 else self.full[:2] + "…"
+        s = super().minimumSizeHint()
+        return QSize(
+            s.width() - fm.horizontalAdvance(self.text()) + fm.horizontalAdvance(short), s.height()
+        )
+
+    def resizeEvent(self, e) -> None:  # noqa: N802
+        super().resizeEvent(e)
+        self._elide()
+
+    def _elide(self) -> None:
+        avail = self.contentsRect().width()
+        text = self.fontMetrics().elidedText(self.full, Qt.TextElideMode.ElideRight, avail)
+        if text != self.text():
+            super().setText(text)
 
 
 class TodoRow(QWidget):
@@ -762,6 +823,16 @@ class DayHeader(QWidget):
         self.today_pill.setObjectName("todayPill")
         self.today_pill.setVisible(is_today)
         lay.addWidget(self.today_pill, 0, Qt.AlignmentFlag.AlignVCenter)
+        hol = holiday(day)
+        # 일요일·공휴일은 달력처럼 빨간 날짜
+        self.label.setProperty("red", hol is not None or d.weekday() == 6)
+        # 좁은 보드 칸에서는 '부처…'처럼 줄어든다 (날짜는 빨갛고, 전체 이름은 툴팁)
+        self.holiday_pill = ElidePill(hol.name if hol else "", self.box)
+        self.holiday_pill.setObjectName("holidayPill")
+        self.holiday_pill.setVisible(hol is not None)
+        if hol is not None:
+            self.holiday_pill.setToolTip(hol.full)
+        lay.addWidget(self.holiday_pill, 0, Qt.AlignmentFlag.AlignVCenter)
         lay.addStretch(1)
         self.count = QLabel(f"{done}/{total}" if total else "", self.box)
         self.count.setObjectName("dayCount")
@@ -1316,7 +1387,17 @@ class TitleBar(QWidget):
         title_box.setContentsMargins(4, 0, 4, 0)
         title_box.setSpacing(1)
         title_box.addWidget(self.label)
-        title_box.addWidget(self.sub)
+        sub_row = QHBoxLayout()
+        sub_row.setContentsMargins(0, 0, 0, 0)
+        sub_row.setSpacing(6)
+        sub_row.addWidget(self.sub)
+        # 하루 보기에서 그날이 공휴일이면 날짜 바로 옆에 '추석' 같은 배지 (좁아져도 안 잘림)
+        self.holiday_pill = QLabel(self)
+        self.holiday_pill.setObjectName("holidayPill")
+        self.holiday_pill.hide()
+        sub_row.addWidget(self.holiday_pill, 0, Qt.AlignmentFlag.AlignVCenter)
+        sub_row.addStretch(1)
+        title_box.addLayout(sub_row)
         self.next_btn = self._button("다음 날짜 (Alt+→)")
         self.next_btn.setFixedSize(26, 32)
         self.next_btn.clicked.connect(self.next_requested.emit)
@@ -1366,6 +1447,14 @@ class TitleBar(QWidget):
         self.label.setText(title)
         self.sub.setText(sub)
         self.sub.setVisible(bool(sub))
+
+    def set_holiday(self, hol: Holiday | None) -> None:
+        # 배지가 붙을 때는 부제가 제 글자 폭만 차지해서 노트가 덜 넓어지게
+        self.sub.fit_text = hol is not None
+        self.sub.updateGeometry()
+        self.holiday_pill.setText(hol.name if hol else "")
+        self.holiday_pill.setToolTip(hol.full if hol else "")
+        self.holiday_pill.setVisible(hol is not None)
 
     def set_progress(self, done: int, total: int) -> None:
         self.count_label.setText(f"{done} / {total} 완료" if total else "할 일 없음")
@@ -1731,7 +1820,8 @@ class NoteWidget(QWidget):
         title_soft = _rgba(text, soft_alpha(text, title))
         # 강조색 위 글자('오늘' 표시): 흰색과 진한 글자 중 대비가 큰 쪽
         on_accent = max((text, "#FFFFFF"), key=lambda c: contrast(c, accent))
-        sunday = "#B3261E" if contrast("#B3261E", card) >= 4.5 else text
+        sunday = HOLIDAY_RED if contrast(HOLIDAY_RED, card) >= 4.5 else text
+        holiday_fg = holiday_text_color(text, card, title)
         self.calendar.set_colors(
             text=text,
             soft=_mix(text, card, soft_alpha(text, card)),
@@ -1807,6 +1897,12 @@ class NoteWidget(QWidget):
                 color: {soft}; font-size: {max(size - 2, 9)}pt;
             }}
             #listToggle:hover {{ background: {_rgba(text, 0.06)}; color: {text}; }}
+            #dayLabel[red="true"] {{ color: {sunday}; }}
+            #holidayPill {{
+                background: {_rgba(HOLIDAY_RED, HOLIDAY_TINT_ALPHA)}; color: {holiday_fg};
+                border-radius: 6px; padding: 0 6px; font-weight: 700;
+                font-size: {max(size - 3, 8)}pt;
+            }}
             #dayCount {{ color: {soft}; font-size: {max(size - 2, 9)}pt; }}
             #dayEmpty {{ color: {soft}; padding: 2px 0 4px 36px; font-size: {max(size - 2, 9)}pt; }}
             QLineEdit {{
@@ -1896,6 +1992,7 @@ class NoteWidget(QWidget):
     def _on_store_changed(self) -> None:
         day = self.store.current_day
         board = self.board_active
+        self.title_bar.set_holiday(holiday(day) if self.view_mode == "day" else None)
         self.board.setVisible(board)
         self.list_view.setVisible(not board)
         if board:
@@ -2019,7 +2116,8 @@ class NoteWidget(QWidget):
             todos = self.store.todos(d)
             done = sum(t.done for t in todos)
             left = len(todos) - done
-            parts = [_plain_day(d)]
+            hol = holiday(d)
+            parts = [_plain_day(d)] + ([hol.full] if hol else [])
             if d == today:
                 parts.append("오늘")
             parts.append(f"남은 일 {left} · 끝낸 일 {done}" if todos else "할 일 없음")
@@ -2033,6 +2131,7 @@ class NoteWidget(QWidget):
                     open=left,
                     done=done,
                     sunday=i % 7 == 0,
+                    holiday=hol is not None,
                     tip=" · ".join(parts) + "\n누르면 이 날 목록 · 더블클릭: 이 날만 보기",
                 )
             )

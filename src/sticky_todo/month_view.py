@@ -41,6 +41,7 @@ class Cell:
     done: int  # 끝낸 일 수
     sunday: bool
     tip: str  # 툴팁
+    holiday: bool = False  # 공휴일 (일요일처럼 빨간 숫자)
 
 
 class MonthCalendar(QWidget):
@@ -162,7 +163,7 @@ class MonthCalendar(QWidget):
             else:
                 if not cell.in_month:
                     p.setPen(c["soft"])
-                elif cell.sunday:
+                elif cell.sunday or cell.holiday:
                     p.setPen(c["sunday"])
                 else:
                     p.setPen(c["text"])
