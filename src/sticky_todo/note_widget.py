@@ -1554,6 +1554,7 @@ class TitleBar(QWidget):
 
         self.pin_btn = self._button("항상 위에 고정")
         self.pin_btn.setCheckable(True)
+        self.pin_btn.setProperty("pin", True)  # 음영 모서리를 덜 둥글게 (QSS)
         self.pin_btn.toggled.connect(lambda _: self._paint_icons())
         self.menu_btn = self._button("메뉴")
         self.close_btn = self._button("닫기")
@@ -1577,10 +1578,15 @@ class TitleBar(QWidget):
         text, accent, bg = self._colors
         soft = _mix(text, bg, max(0.55, ring_alpha(text, bg)))
         off, on = self.pin_images
+        # 테마 그림이 있으면 켜짐/꺼짐은 그림으로 보이니 눌림 음영은 안 깐다 (QSS)
+        if self.pin_btn.property("themed") != (off is not None):
+            self.pin_btn.setProperty("themed", off is not None)
+            self.pin_btn.style().unpolish(self.pin_btn)
+            self.pin_btn.style().polish(self.pin_btn)
         if off is not None:
             pinned = self.pin_btn.isChecked()
             self.pin_btn.setIcon(QIcon((on or off) if pinned else faded_pixmap(off)))
-            self.pin_btn.setIconSize(QSize(22, 22))
+            self.pin_btn.setIconSize(QSize(24, 24))
         elif self.pin_btn.isChecked():
             self.pin_btn.setIcon(icons.icon("pin_fill", accent))
             self.pin_btn.setIconSize(QSize(20, 20))
@@ -2185,6 +2191,9 @@ class NoteWidget(QWidget):
             #titleButton {{ border: none; background: transparent; border-radius: 16px; }}
             #titleButton:hover {{ background: {_rgba(text, 0.08)}; }}
             #titleButton:checked {{ background: {_rgba(accent, 0.14)}; }}
+            #titleButton[pin="true"] {{ border-radius: 3px; }}
+            #titleButton[themed="true"]:checked {{ background: transparent; }}
+            #titleButton[themed="true"]:checked:hover {{ background: {_rgba(text, 0.08)}; }}
             #todoList, #rowContainer, #bottomBar {{ background: transparent; }}
             #todoList > QWidget > QWidget {{ background: transparent; }}
             #row {{ border-radius: 10px; }}

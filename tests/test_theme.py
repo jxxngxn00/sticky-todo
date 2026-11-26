@@ -238,6 +238,26 @@ def test_theme_applies_to_icons(themed, store):
     assert themed.card.bg_image is not None and themed.card.show_bg
 
 
+def _pin_edge(btn):
+    """고정 버튼 왼쪽 가장자리 1px 안쪽 색 (눌림 음영이 있으면 그 색)."""
+    pix = QPixmap(btn.size())
+    pix.fill(Qt.GlobalColor.white)
+    btn.render(pix)
+    img = pix.toImage()
+    return img.pixelColor(1, 1).name(), img.pixelColor(1, btn.height() // 2).name()
+
+
+def test_pin_shading(themed, tmp_path):
+    """테마 핀은 눌러도 음영 없음, 기본 핀은 음영이 모서리까지 (둥글기 3px), 테마 아이콘 24px."""
+    tb = themed.title_bar
+    QTest.mouseClick(tb.pin_btn, Qt.MouseButton.LeftButton)
+    assert tb.pin_btn.isChecked() and tb.pin_btn.iconSize().width() == 24
+    assert _pin_edge(tb.pin_btn) == ("#ffffff", "#ffffff")
+    themed.set_theme(Theme(name="", folder=tmp_path / "none"))
+    corner, edge = _pin_edge(tb.pin_btn)
+    assert edge != "#ffffff" and corner == edge  # 3px 둥글기라 (1,1)까지 음영
+
+
 def test_board_hides_background(themed):
     themed.set_view_mode("week")
     themed.resize(1000, 460)
