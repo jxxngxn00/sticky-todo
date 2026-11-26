@@ -55,8 +55,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import icons, markdown_io
-from .note_widget import CheckButton, _shift_day, day_label
+from . import date_picker, icons, markdown_io
+from .note_widget import CheckButton, day_label, quick_move_days
 from .paths import default_export_dir
 from .storage import SortKey, Status, Todo, TodoStore
 
@@ -619,6 +619,19 @@ class ManagerWindow(QWidget):
         if n:
             self.show_toast(f"{n}개를 {day_label(day, short=True)}(으)로 옮겼어요")
 
+    def pick_and_move_selected(self) -> None:
+        """달력 창에서 날짜를 골라 고른 항목을 모두 그 날로."""
+        todos = self._selected_todos()
+        if not todos:
+            return
+        days = {t.day for t in todos}
+        start = days.pop() if len(days) == 1 else date.today().isoformat()
+        day = date_picker.pick_date(
+            self.store, start, accent=self.settings["accent_color"], parent=self
+        )
+        if day:
+            self.move_selected_to(day)
+
     def archive_selected(self) -> None:
         ids = self.selected_ids()
         if not ids:
@@ -645,10 +658,11 @@ class ManagerWindow(QWidget):
             menu.addAction("내용 수정", self._edit_current)
         if n == 1:
             menu.addAction("노트에서 보기", lambda: self.store.set_day(todos[0].day))
-        today = date.today().isoformat()
         move = menu.addMenu("날짜 옮기기")
-        move.addAction("오늘로", lambda: self.move_selected_to(today))
-        move.addAction("내일로", lambda: self.move_selected_to(_shift_day(today, 1)))
+        for label, day in quick_move_days(date.today().isoformat()):
+            move.addAction(label, lambda d=day: self.move_selected_to(d))
+        move.addSeparator()
+        move.addAction("날짜 고르기…", self.pick_and_move_selected)
         menu.addAction(f"보관함으로 ({n}개)", self.archive_selected)
         menu.addAction("텍스트 파일로 내보내기…", self.export_selected)
         menu.addSeparator()
@@ -662,7 +676,10 @@ class ManagerWindow(QWidget):
         # 선택 밖의 줄을 우클릭하면 그 줄만 선택
         if not self._row_selected(index.row()):
             self.select_ids([self.model.rows[index.row()].id])
-        self.table.setCurrentIndex(self.model.index(index.row(), COL_TEXT))
+        # table.setCurrentIndex는 선택을 그 줄 하나로 바꿔 버리므로 '현재 칸'만 옮긴다
+        self.table.selectionModel().setCurrentIndex(
+            self.model.index(index.row(), COL_TEXT), QItemSelectionModel.SelectionFlag.NoUpdate
+        )
         self.build_context_menu().exec(self.table.viewport().mapToGlobal(pos))
 
     def _edit_current(self) -> None:

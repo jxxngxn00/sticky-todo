@@ -273,6 +273,59 @@ def month_grid(day: str) -> list[str]:
     return [_shift_day(start, i) for i in range(n)]
 
 
+def quick_move_days(today: str) -> list[tuple[str, str]]:
+    """'날짜 옮기기' 메뉴의 빠른 선택: 오늘 · 내일 · 모레 · 다음 주 월요일 (주는 일요일 시작)."""
+
+    def md(day: str) -> str:
+        d = date.fromisoformat(day)
+        return f"{d.month}/{d.day}"
+
+    after = _shift_day(today, 2)
+    monday = _shift_day(week_start(today), 8)
+    return [
+        ("오늘", today),
+        ("내일", _shift_day(today, 1)),
+        (f"모레 ({md(after)})", after),
+        (f"다음 주 월요일 ({md(monday)})", monday),
+    ]
+
+
+def calendar_cells(
+    store: TodoStore, month_of: str, *, current: str | None, hint: str
+) -> list[Cell]:
+    """month_of가 들어간 달의 달력 칸 (앞뒤 달 포함 5~6주).
+
+    월간 보기와 '날짜 고르기' 창이 같이 쓴다. hint는 툴팁 마지막 줄 (누르면 무엇을 하는지).
+    """
+    month = date.fromisoformat(month_of).month
+    today = today_str()
+    cells = []
+    for i, d in enumerate(month_grid(month_of)):
+        todos = store.todos(d)
+        done = sum(t.done for t in todos)
+        left = len(todos) - done
+        hol = holiday(d)
+        parts = [_plain_day(d)] + ([hol.full] if hol else [])
+        if d == today:
+            parts.append("오늘")
+        parts.append(f"남은 일 {left} · 끝낸 일 {done}" if todos else "할 일 없음")
+        cells.append(
+            Cell(
+                day=d,
+                number=date.fromisoformat(d).day,
+                in_month=date.fromisoformat(d).month == month,
+                today=d == today,
+                current=d == current,
+                open=left,
+                done=done,
+                sunday=i % 7 == 0,
+                holiday=hol is not None,
+                tip=" · ".join(parts) + "\n" + hint,
+            )
+        )
+    return cells
+
+
 def month_title(day: str, today: date | None = None) -> tuple[str, str]:
     """월간 제목 두 줄: ('11월', '2026년')."""
     d = date.fromisoformat(day)
@@ -2109,32 +2162,9 @@ class NoteWidget(QWidget):
 
     def _update_calendar(self) -> None:
         day = self.store.current_day
-        month = date.fromisoformat(day).month
-        today = today_str()
-        cells = []
-        for i, d in enumerate(month_grid(day)):
-            todos = self.store.todos(d)
-            done = sum(t.done for t in todos)
-            left = len(todos) - done
-            hol = holiday(d)
-            parts = [_plain_day(d)] + ([hol.full] if hol else [])
-            if d == today:
-                parts.append("오늘")
-            parts.append(f"남은 일 {left} · 끝낸 일 {done}" if todos else "할 일 없음")
-            cells.append(
-                Cell(
-                    day=d,
-                    number=date.fromisoformat(d).day,
-                    in_month=date.fromisoformat(d).month == month,
-                    today=d == today,
-                    current=d == day,
-                    open=left,
-                    done=done,
-                    sunday=i % 7 == 0,
-                    holiday=hol is not None,
-                    tip=" · ".join(parts) + "\n누르면 이 날 목록 · 더블클릭: 이 날만 보기",
-                )
-            )
+        cells = calendar_cells(
+            self.store, day, current=day, hint="누르면 이 날 목록 · 더블클릭: 이 날만 보기"
+        )
         self.calendar.set_cells(cells)
         todos = self.store.todos(day)
         rel = day_label(day, short=True)
@@ -2396,10 +2426,25 @@ class NoteWidget(QWidget):
             f"다음 주 같은 요일 ({day_label(next_week, short=True)})",
             lambda: self.move_todo(todo_id, next_week),
         )
+        other.addSeparator()
+        other.addAction("날짜 고르기…", lambda: self.pick_day_for(todo_id))
         menu.addAction("보관함으로", lambda: self.archive_todo(todo_id))
         menu.addSeparator()
         menu.addAction("삭제", lambda: self._view_for(todo_id).request_delete(todo_id))
         return menu
+
+    def pick_day_for(self, todo_id: str) -> None:
+        """달력 창에서 날짜를 골라 그 날로 옮긴다."""
+        from . import date_picker
+
+        todo = self.store.get(todo_id)
+        if todo is None:
+            return
+        day = date_picker.pick_date(
+            self.store, todo.day, accent=self.settings["accent_color"], parent=self
+        )
+        if day:
+            self.move_todo(todo_id, day)
 
     def move_todo(self, todo_id: str, day: str) -> None:
         n = self.store.move_to_day([todo_id], day)

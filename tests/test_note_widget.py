@@ -703,11 +703,34 @@ def test_row_menu_move_to_other_day(note, store):
     menu = note.build_row_menu(a.id)
     sub = next(act.menu() for act in menu.actions() if act.text() == "다른 날로 옮기기")
     labels = [act.text() for act in sub.actions() if act.text()]
-    assert len(labels) == 7  # 같은 주 다른 6일 + 다음 주 같은 요일
-    assert labels[-1].startswith("다음 주 같은 요일")
-    sub.actions()[-1].trigger()
+    assert len(labels) == 8  # 같은 주 다른 6일 + 다음 주 같은 요일 + 날짜 고르기
+    assert labels[-2].startswith("다음 주 같은 요일") and labels[-1] == "날짜 고르기…"
+    next(act for act in sub.actions() if act.text().startswith("다음 주")).trigger()
     assert [t.text for t in store.todos(_shift_day(today_str(), 7))] == ["A"]
     assert len(week_days(today_str())) == 7
+
+
+def test_row_menu_pick_date(note, store, monkeypatch):
+    from sticky_todo import date_picker
+
+    a = store.add("A")
+    calls = []
+
+    def fake_pick(_store, start, **_kw):
+        calls.append(start)
+        return "2027-03-15"
+
+    monkeypatch.setattr(date_picker, "pick_date", fake_pick)
+    menu = note.build_row_menu(a.id)
+    sub = next(act.menu() for act in menu.actions() if act.text() == "다른 날로 옮기기")
+    next(act for act in sub.actions() if act.text() == "날짜 고르기…").trigger()
+    assert calls == [today_str()]  # 달력은 그 할 일의 날짜에서 시작
+    assert [t.text for t in store.todos("2027-03-15")] == ["A"]
+    # 취소하면 그대로
+    b = store.add("B")
+    monkeypatch.setattr(date_picker, "pick_date", lambda *_a, **_k: None)
+    note.pick_day_for(b.id)
+    assert store.get(b.id).day == today_str()
 
 
 def test_view_mode_remembers_size_per_mode(note, store):

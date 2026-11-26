@@ -365,3 +365,112 @@ def test_search_spans_all_days(win, store):
     store.add("연말 회의")
     win.search.setText("회의")
     assert sorted(texts(win)) == ["연말 회의", "오늘 회의"]
+
+
+@pytest.mark.parametrize("how", ["ctrl_click", "select_column"])
+def test_right_click_keeps_multi_selection(win, store, monkeypatch, how):
+    """여러 개 고른 뒤 그중 하나를 우클릭해도 선택이 하나로 줄지 않는다 (실제 마우스 입력)."""
+    from PySide6.QtGui import QContextMenuEvent
+    from PySide6.QtWidgets import QApplication
+
+    fill(store)
+    t = win.table
+
+    def center(row, col):
+        return t.visualRect(win.model.index(row, col)).center()
+
+    if how == "ctrl_click":
+        QTest.mouseClick(t.viewport(), Qt.MouseButton.LeftButton, pos=center(0, COL_TEXT))
+        QTest.mouseClick(
+            t.viewport(), Qt.MouseButton.LeftButton, Qt.KeyboardModifier.ControlModifier,
+            center(2, COL_TEXT),
+        )  # fmt: skip
+    else:
+        click_select_cell(win, 0)
+        click_select_cell(win, 2)
+    assert len(win.selected_ids()) == 2
+
+    seen = []
+
+    class FakeMenu:
+        def __init__(self, menu):
+            self.menu = menu
+
+        def exec(self, *_args):
+            seen.append((len(win.selected_ids()), menu_texts(self.menu)))
+
+    build = win.build_context_menu
+    monkeypatch.setattr(win, "build_context_menu", lambda: FakeMenu(build()))
+    pos = center(2, COL_TEXT)
+    QTest.mousePress(t.viewport(), Qt.MouseButton.RightButton, pos=pos)
+    QTest.mouseRelease(t.viewport(), Qt.MouseButton.RightButton, pos=pos)
+    ev = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, pos, t.viewport().mapToGlobal(pos))
+    QApplication.sendEvent(t.viewport(), ev)
+    assert seen and seen[-1][0] == 2
+    assert "보관함으로 (2개)" in seen[-1][1]
+    assert len(win.selected_ids()) == 2
+
+    # 선택 밖의 줄을 우클릭하면 그 줄만
+    pos = center(1, COL_TEXT)
+    ev = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, pos, t.viewport().mapToGlobal(pos))
+    QApplication.sendEvent(t.viewport(), ev)
+    assert seen[-1][0] == 1
+
+
+def test_quick_move_days():
+    from sticky_todo.note_widget import quick_move_days
+
+    # 2026-11-26은 목요일 → 다음 주(11/29 일요일 시작)의 월요일은 11/30
+    assert quick_move_days("2026-11-26") == [
+        ("오늘", "2026-11-26"),
+        ("내일", "2026-11-27"),
+        ("모레 (11/28)", "2026-11-28"),
+        ("다음 주 월요일 (11/30)", "2026-11-30"),
+    ]
+    # 일요일이면 그 주가 이번 주라서 다음 주 월요일은 8일 뒤
+    assert quick_move_days("2026-11-29")[-1] == ("다음 주 월요일 (12/7)", "2026-12-07")
+    # 연말
+    assert quick_move_days("2026-12-31")[2:] == [
+        ("모레 (1/2)", "2027-01-02"),
+        ("다음 주 월요일 (1/4)", "2027-01-04"),
+    ]
+
+
+def test_context_menu_move_options_and_pick(win, store, monkeypatch):
+    from sticky_todo import date_picker
+
+    ids = fill(store)
+    win.select_ids([ids["A"], ids["C"]])
+    menu = win.build_context_menu()
+    move = next(a.menu() for a in menu.actions() if a.text() == "날짜 옮기기")
+    labels = menu_texts(move)
+    assert labels[:2] == ["오늘", "내일"]
+    assert labels[2].startswith("모레") and labels[3].startswith("다음 주 월요일")
+    assert labels[-1] == "날짜 고르기…"
+
+    monkeypatch.setattr(date_picker, "pick_date", lambda *_a, **_k: "2027-02-10")
+    next(a for a in move.actions() if a.text() == "날짜 고르기…").trigger()
+    # A는 하위 A1까지 함께 옮겨진다
+    assert {store.get(i).day for i in (ids["A"], ids["A1"], ids["C"])} == {"2027-02-10"}
+    assert "옮겼어요" in win.toast_label.text()
+
+
+def test_date_picker_dialog(qapp, store):
+    """실제 마우스로 달력 날짜를 누르면 그 날이 골라지고 창이 닫힌다."""
+    from sticky_todo.date_picker import DatePicker
+
+    store.set_day("2026-09-25")
+    store.add("성묘")
+    dlg = DatePicker(store, "2026-09-25")
+    dlg.show()
+    assert dlg.month_label.text() == "2026년 9월"
+    cells = {c.day: c for c in dlg.calendar.cells}
+    assert cells["2026-09-25"].current and cells["2026-09-25"].holiday
+    assert cells["2026-09-25"].open == 1
+    dlg.next_btn.click()
+    assert dlg.month_label.text() == "2026년 10월"
+    i = dlg.calendar.index_of("2026-10-14")
+    pos = dlg.calendar.cell_rect(i).center().toPoint()
+    QTest.mouseClick(dlg.calendar, Qt.MouseButton.LeftButton, pos=pos)
+    assert dlg.selected == "2026-10-14" and dlg.result() == dlg.DialogCode.Accepted
+    dlg.deleteLater()
