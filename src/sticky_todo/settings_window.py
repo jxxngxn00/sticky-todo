@@ -134,6 +134,7 @@ class SettingsWindow(QDialog):
         self.setMinimumWidth(420)
 
         tabs = QTabWidget(self)
+        self.tabs = tabs
         tabs.addTab(self._build_look_tab(), "외형")
         tabs.addTab(self._build_list_tab(), "목록 동작")
         self.theme_tab = ThemeTab(note)
@@ -357,6 +358,9 @@ class SettingsWindow(QDialog):
         self.load_values()
 
     # ------------------------------------------------------------ 확인/취소
+
+    def show_theme_tab(self) -> None:
+        self.tabs.setCurrentWidget(self.theme_tab)
 
     def accept(self) -> None:
         self.note.save_settings()

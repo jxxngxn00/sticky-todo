@@ -1858,6 +1858,7 @@ class NoteWidget(QWidget):
         self.theme = load_theme(self.themes_dir / "current")
         self._theme_pix: dict[str, QPixmap | None] = {}
         self._bg_overlay: BgDragOverlay | None = None
+        self.setAcceptDrops(True)  # .stodotheme 파일을 끌어다 놓으면 테마 불러오기
         self.setWindowTitle("Sticky Todo")
         # 최소 크기는 고정값 대신 레이아웃이 정한다: 보기(일·주·월)·배너·글자 크기에 따라
         # 제목·버튼·달력·입력칸이 눌려서 글자가 겹치기 직전까지만 줄어든다.
@@ -2587,6 +2588,32 @@ class NoteWidget(QWidget):
         menu.addSeparator()
         menu.addAction("종료", self.quit_app)
         return menu
+
+    @staticmethod
+    def _theme_file(e) -> Path | None:
+        """끌어 온 것이 .stodotheme 파일 하나면 그 경로."""
+        urls = e.mimeData().urls() if e.mimeData().hasUrls() else []
+        if len(urls) != 1 or not urls[0].isLocalFile():
+            return None
+        path = Path(urls[0].toLocalFile())
+        return path if path.suffix.lower() == ".stodotheme" else None
+
+    def dragEnterEvent(self, e) -> None:  # noqa: N802
+        if self._theme_file(e) is not None:
+            e.acceptProposedAction()
+
+    def dropEvent(self, e) -> None:  # noqa: N802
+        path = self._theme_file(e)
+        if path is None:
+            return
+        e.acceptProposedAction()
+        self.open_theme_file(path)
+
+    def open_theme_file(self, path: Path) -> None:
+        """설정 창의 '테마' 탭을 열고 미리보기로 불러온다 (확인해야 저장)."""
+        self.open_settings_window()
+        self._settings_win.show_theme_tab()
+        self._settings_win.theme_tab.load_theme_file(path)
 
     def open_settings_window(self) -> None:
         from .settings_window import SettingsWindow

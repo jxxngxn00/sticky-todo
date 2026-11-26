@@ -360,3 +360,157 @@ def test_tab_controls_show_only_when_used(win):
     assert win.note.card.bg_pos == (0.2, 0.15)
     tab.clear_slot("pin")  # 핀을 비우면 '고정됐을 때'도 같이
     assert "pin" not in tab.theme.images and "pin_on" not in tab.theme.images
+
+
+# ------------------------------------------------------------ .stodotheme 파일
+
+import zipfile  # noqa: E402
+
+from sticky_todo.theme import ThemeFileError, export_theme, import_theme  # noqa: E402
+
+
+def example_pack(tmp_path):
+    t = load_example(tmp_path / "src")
+    t.name = "귤 친구 2"
+    t.today_offset = (1.5, -1.0)
+    return t, export_theme(t, tmp_path / "out" / "귤")
+
+
+def test_export_import_roundtrip(qapp, tmp_path):
+    (tmp_path / "out").mkdir()
+    t, pack = example_pack(tmp_path)
+    assert pack.name == "귤.stodotheme"  # 확장자를 붙여 준다
+    with zipfile.ZipFile(pack) as zf:
+        assert sorted(zf.namelist()) == sorted(["theme.json", *FILES.values()])
+    back = import_theme(pack, tmp_path / "draft")
+    assert back.name == "귤 친구 2" and set(back.images) == set(FILES)
+    assert back.today_offset == (1.5, -1.0) and back.background == t.background
+    for slot, path in back.images.items():
+        assert path.parent == tmp_path / "draft"
+        assert QImage(str(path)) == QImage(str(t.images[slot]))  # 다시 정리해도 같은 그림
+    assert not (tmp_path / "draft.import").exists() and not (tmp_path / "draft.raw").exists()
+
+
+def make_zip(path, entries, method=zipfile.ZIP_DEFLATED):
+    with zipfile.ZipFile(path, "w", method) as zf:
+        for name, data in entries.items():
+            zf.writestr(name, data)
+    return path
+
+
+def good_png_bytes(tmp_path):
+    return png(tmp_path / "g.png", 16, 16, rect=(2, 2, 10, 10)).read_bytes()
+
+
+THEME_JSON = json.dumps({"name": "x", "add": "add.png"})
+
+
+@pytest.mark.parametrize(
+    ("case", "message"),
+    [
+        ("path", "경로"),
+        ("parent", "경로"),
+        ("drive", "경로"),
+        ("bomb", "압축"),
+        ("many", "너무 많아요"),
+        ("fake_image", "추가 버튼 그림"),
+        ("no_json", "theme.json"),
+        ("broken", "망가졌거나"),
+    ],
+)
+def test_import_rejects(qapp, tmp_path, case, message):
+    draft = tmp_path / "draft"
+    draft.mkdir()
+    (draft / "keep.txt").write_text("원래 것")
+    f = tmp_path / f"{case}.stodotheme"
+    good = good_png_bytes(tmp_path)
+    if case == "path":
+        make_zip(f, {"theme.json": THEME_JSON, "img/add.png": good})
+    elif case == "parent":
+        make_zip(f, {"theme.json": THEME_JSON, "../add.png": good})
+    elif case == "drive":
+        make_zip(f, {"theme.json": THEME_JSON, "C:add.png": good})
+    elif case == "bomb":
+        make_zip(f, {"theme.json": THEME_JSON, "add.png": b"\0" * (5 * 1024 * 1024)})
+    elif case == "many":
+        make_zip(f, {"theme.json": THEME_JSON, **{f"x{i}.txt": b"a" for i in range(25)}})
+    elif case == "fake_image":
+        make_zip(f, {"theme.json": THEME_JSON, "add.png": b"not an image"})
+    elif case == "no_json":
+        make_zip(f, {"add.png": good})
+    elif case == "broken":
+        f.write_bytes(b"PK\x03\x04 broken zip")
+    with pytest.raises(ThemeFileError, match=message):
+        import_theme(f, draft)
+    assert (draft / "keep.txt").read_text() == "원래 것"  # 실패하면 아무것도 안 바뀜
+
+
+def test_import_rejects_too_big_file(qapp, tmp_path):
+    f = tmp_path / "big.stodotheme"
+    with open(f, "wb") as out:
+        out.seek(20 * 1024 * 1024 + 1)
+        out.write(b"\0")
+    with pytest.raises(ThemeFileError, match="20MB"):
+        import_theme(f, tmp_path / "draft")
+
+
+def test_import_ignores_unknown_files_and_bad_values(qapp, tmp_path):
+    f = make_zip(tmp_path / "ok.stodotheme", {
+        "theme.json": json.dumps({"name": "<b>이름</b>", "add": "add.png",
+                                  "background": {"x": 5, "opacity": "많이"}}),
+        "add.png": good_png_bytes(tmp_path),
+        "readme.txt": "무시",
+        "script.py": "print(1)",
+    })  # fmt: skip
+    t = import_theme(f, tmp_path / "draft")
+    assert t.name == "<b>이름</b>"  # 글자로만 쓰인다 (QLineEdit)
+    assert set(t.images) == {"add"} and t.background.x == 1.0 and t.background.opacity == 40
+    assert sorted(p.name for p in (tmp_path / "draft").iterdir()) == ["add.png", "theme.json"]
+
+
+def test_tab_save_and_load_theme_file(win, note, tmp_path, monkeypatch):
+    tab = win.theme_tab
+    tab.use_example()
+    out = tmp_path / "share" / "내 귤.stodotheme"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), ""))
+    tab.save_btn.click()
+    assert out.is_file() and "저장했어요" in note.toast_label.text()
+    tab.clear_all()
+    assert note.theme.is_empty
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(out), ""))
+    tab.load_btn.click()
+    assert set(note.theme.images) == set(FILES) and tab.name_edit.text() == "귤 친구"
+    win.reject()  # 취소하면 원래대로 (불러오기 전)
+    assert note.theme.is_empty
+
+
+def test_drop_theme_file_on_note(note, tmp_path, dialogs):
+    from PySide6.QtCore import QMimeData, QPointF, QUrl
+    from PySide6.QtGui import QDragEnterEvent, QDropEvent
+    from PySide6.QtWidgets import QApplication
+
+    (tmp_path / "out").mkdir()
+    _, pack = example_pack(tmp_path)
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(pack))])
+    pos = QPointF(note.width() / 2, note.height() / 2)
+    enter = QDragEnterEvent(pos, Qt.DropAction.CopyAction, mime,
+                            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)  # fmt: skip
+    QApplication.sendEvent(note, enter)
+    assert enter.isAccepted()
+    drop = QDropEvent(pos, Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton,
+                      Qt.KeyboardModifier.NoModifier)  # fmt: skip
+    QApplication.sendEvent(note, drop)
+    win = note._settings_win
+    assert win is not None and win.tabs.currentWidget() is win.theme_tab
+    assert note.theme.name == "귤 친구 2" and not note.theme.is_empty
+    win.accept()
+    assert load_theme(note.themes_dir / "current").name == "귤 친구 2"
+    # 다른 파일은 받지 않는다
+    other = QMimeData()
+    other.setUrls([QUrl.fromLocalFile(str(tmp_path / "a.txt"))])
+    e2 = QDragEnterEvent(pos, Qt.DropAction.CopyAction, other,
+                         Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)  # fmt: skip
+    e2.ignore()
+    QApplication.sendEvent(note, e2)
+    assert not e2.isAccepted()

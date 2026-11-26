@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import shutil
+import zipfile
+import zlib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
@@ -368,3 +370,113 @@ def max_opacity(img: QImage, card: str, text: str) -> int:
         if all(_contrast(fg, blended(c, t)) >= 4.5 for c in (dark, light)):
             return o
     return 0
+
+
+# ------------------------------------------------------------ .stodotheme 파일 (속은 zip)
+
+EXT = ".stodotheme"
+MAX_PACK_BYTES = 20 * 1024 * 1024
+MAX_UNPACKED_BYTES = 50 * 1024 * 1024
+MAX_ENTRIES = 20
+MAX_RATIO = 100  # 압축을 풀면 100배 넘게 커지는 파일은 압축 폭탄으로 본다
+MAX_JSON_BYTES = 64 * 1024
+PACK_NAMES = {"theme.json", *FILES.values()}
+
+
+class ThemeFileError(ValueError):
+    """테마 파일을 불러올 수 없을 때 (사용자에게 보여줄 문장)."""
+
+
+def export_theme(theme: Theme, dest: Path) -> Path:
+    """theme.json과 쓰는 그림만 묶어서 dest(.stodotheme)로.
+
+    다 쓴 뒤에 이름을 바꿔서 반쯤 쓴 파일이 남지 않게 한다.
+    """
+    dest = Path(dest)
+    if dest.suffix.lower() != EXT:
+        dest = dest.with_name(dest.name + EXT)
+    tmp = dest.with_name(dest.name + ".tmp")
+    with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("theme.json", json.dumps(theme_json(theme), ensure_ascii=False, indent=2))
+        for slot, path in theme.images.items():
+            zf.write(path, FILES[slot])
+    tmp.replace(dest)
+    return dest
+
+
+def _check_entries(infos: list[zipfile.ZipInfo]) -> dict[str, zipfile.ZipInfo]:
+    if len(infos) > MAX_ENTRIES:
+        raise ThemeFileError("테마 파일 안에 파일이 너무 많아요.")
+    if sum(i.file_size for i in infos) > MAX_UNPACKED_BYTES:
+        raise ThemeFileError("테마 파일을 풀면 너무 커요 (50MB까지).")
+    found: dict[str, zipfile.ZipInfo] = {}
+    for info in infos:
+        name = info.filename
+        if "/" in name or "\\" in name or ".." in name or ":" in name or name.startswith("."):
+            raise ThemeFileError("테마 파일 안에 이상한 경로가 있어요.")
+        if info.flag_bits & 0x1:
+            raise ThemeFileError("암호가 걸린 테마 파일은 열 수 없어요.")
+        if info.compress_size and info.file_size / info.compress_size > MAX_RATIO:
+            raise ThemeFileError("테마 파일이 비정상적으로 압축돼 있어요.")
+        if name in PACK_NAMES:  # 그 밖의 파일은 쓰지 않고 무시
+            found[name] = info
+    if "theme.json" not in found:
+        raise ThemeFileError("테마 파일에 theme.json이 없어요.")
+    return found
+
+
+def _read_entry(zf: zipfile.ZipFile, info: zipfile.ZipInfo, limit: int) -> bytes:
+    with zf.open(info) as f:
+        data = f.read(limit + 1)  # 적어 둔 크기를 믿지 않고 실제로 읽은 만큼 센다
+    if len(data) > limit:
+        raise ThemeFileError("테마 파일 안의 파일이 너무 커요.")
+    return data
+
+
+def import_theme(src: Path, folder: Path) -> Theme:
+    """테마 파일을 검사하고 풀어서 folder에 넣는다. 하나라도 걸리면 folder는 그대로.
+
+    그림은 '내 그림…'과 똑같이 다시 검사·정리한다 (테마 파일 안의 그림이라고 믿지 않는다).
+    """
+    src, folder = Path(src), Path(folder)
+    try:
+        size = src.stat().st_size
+    except OSError as e:
+        raise ThemeFileError("파일을 열 수 없어요.") from e
+    if size > MAX_PACK_BYTES:
+        raise ThemeFileError("테마 파일이 너무 커요 (20MB까지).")
+    work = folder.with_name(folder.name + ".import")
+    raw = folder.with_name(folder.name + ".raw")
+    for d in (work, raw):
+        shutil.rmtree(d, ignore_errors=True)
+    try:
+        try:
+            with zipfile.ZipFile(src) as zf:
+                found = _check_entries(zf.infolist())
+                data = _read_entry(zf, found.pop("theme.json"), MAX_JSON_BYTES)
+                raw.mkdir(parents=True)
+                for name, info in found.items():
+                    (raw / name).write_bytes(_read_entry(zf, info, MAX_FILE_BYTES))
+        except ThemeFileError:
+            raise
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, zlib.error, EOFError,
+                NotImplementedError, RuntimeError, ValueError) as e:  # fmt: skip
+            raise ThemeFileError("테마 파일이 망가졌거나 테마 파일이 아니에요.") from e
+        work.mkdir(parents=True)
+        (work / "theme.json").write_bytes(data)
+        for slot, name in FILES.items():
+            if (raw / name).is_file():
+                try:
+                    import_image(raw / name, slot, work)
+                except ThemeImageError as e:
+                    raise ThemeFileError(f"{SLOT_NAMES[slot]} 그림: {e}") from e
+        theme = load_theme(work)
+        theme.folder = folder
+        theme.images = {s: folder / FILES[s] for s in theme.images}
+        if folder.exists():
+            shutil.rmtree(folder)
+        work.rename(folder)
+        return theme
+    finally:
+        shutil.rmtree(raw, ignore_errors=True)
+        shutil.rmtree(work, ignore_errors=True)

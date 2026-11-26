@@ -31,13 +31,18 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .paths import default_export_dir
 from .theme import (
+    EXT,
     OFFSET_MAX,
     SLOT_NAMES,
     Background,
+    ThemeFileError,
     ThemeImageError,
     copy_theme,
+    export_theme,
     import_image,
+    import_theme,
     load_example,
     load_theme,
     replace_folder,
@@ -60,6 +65,14 @@ ORDER = ("pin", "pin_on", "todo", "done", "add", "today", "background")
 # 3×3 빠른 위치 (그림 가운데, 노트 안 비율)
 SPOTS = [(x, y) for y in (0.15, 0.5, 0.85) for x in (0.2, 0.5, 0.8)]
 IMAGE_FILTER = "그림 (*.png *.jpg *.jpeg *.webp)"
+THEME_FILTER = "Sticky Todo 테마 (*.stodotheme)"
+
+
+def _safe_name(name: str) -> str:
+    """파일 이름에 쓸 수 없는 글자는 뺀다."""
+    return "".join(c for c in name if c not in '\\/:*?"<>|').strip(" .")
+
+
 THUMB = 32
 
 
@@ -95,6 +108,17 @@ class ThemeTab(QWidget):
         self.clear_all_btn.clicked.connect(self.clear_all)
         row.addWidget(self.example_btn)
         row.addWidget(self.clear_all_btn)
+        row.addStretch(1)
+        lay.addLayout(row)
+        row = QHBoxLayout()
+        self.load_btn = QPushButton("테마 불러오기…")
+        self.load_btn.setToolTip(".stodotheme 파일 (노트 위로 끌어다 놓아도 돼요)")
+        self.load_btn.clicked.connect(self.pick_theme_file)
+        self.save_btn = QPushButton("테마 파일로 저장…")
+        self.save_btn.setToolTip("지금 보이는 테마를 .stodotheme 파일 하나로 묶어요")
+        self.save_btn.clicked.connect(self.save_theme_file)
+        row.addWidget(self.load_btn)
+        row.addWidget(self.save_btn)
         row.addStretch(1)
         lay.addLayout(row)
 
@@ -323,6 +347,38 @@ class ThemeTab(QWidget):
             background=Background(),
         )  # fmt: skip
         self._changed()
+
+    def pick_theme_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "테마 불러오기", "", THEME_FILTER)
+        if path:
+            self.load_theme_file(Path(path))
+
+    def load_theme_file(self, path: Path) -> bool:
+        """검사를 통과하면 미리보기로 적용 (확인을 눌러야 저장, 취소하면 원래대로)."""
+        try:
+            theme = import_theme(path, self.draft_dir)
+        except (ThemeFileError, OSError) as e:
+            QMessageBox.warning(self, "테마를 불러올 수 없어요", str(e))
+            return False
+        self.theme = theme
+        if not self.theme.name:
+            self.theme.name = path.stem[:50]
+        self._changed()
+        return True
+
+    def save_theme_file(self) -> None:
+        name = _safe_name(self.theme.name) or "내 테마"
+        start = str(default_export_dir() / f"{name}{EXT}")
+        path, _ = QFileDialog.getSaveFileName(self, "테마 파일로 저장", start, THEME_FILTER)
+        if not path:
+            return
+        try:
+            Path(path).parent.mkdir(parents=True, exist_ok=True)
+            dest = export_theme(self.theme, Path(path))
+        except OSError as e:
+            QMessageBox.warning(self, "테마를 저장하지 못했어요", str(e))
+            return
+        self.note.show_toast(f"'{dest.name}'로 저장했어요")
 
     def use_example(self) -> None:
         self.theme = load_example(self.draft_dir)
