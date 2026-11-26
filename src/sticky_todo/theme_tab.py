@@ -321,13 +321,16 @@ class ThemeTab(QWidget):
             self.set_image(slot, Path(path))
 
     def set_image(self, slot: str, src: Path) -> bool:
+        notes: list[str] = []
         try:
-            dst = import_image(src, slot, self.draft_dir)
+            dst = import_image(src, slot, self.draft_dir, notes)
         except (ThemeImageError, OSError) as e:
             QMessageBox.warning(self, "그림을 넣을 수 없어요", str(e))
             return False
         self.theme.images[slot] = dst
         self._changed()
+        if notes:  # 넣기는 하되 알려만 준다
+            QMessageBox.information(self, "그림이 작아요", notes[0])
         return True
 
     def clear_slot(self, slot: str) -> None:

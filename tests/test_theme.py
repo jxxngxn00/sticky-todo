@@ -344,19 +344,38 @@ def test_tab_cancel_restores(win, note):
     assert not (note.themes_dir / "current" / "theme.json").exists()
 
 
-def test_tab_ok_saves_and_reloads(win, note, tmp_path, monkeypatch):
+def test_tab_ok_saves_and_reloads(win, note, tmp_path, monkeypatch, dialogs):
     tab = win.theme_tab
     src = png(tmp_path / "mine.png", 60, 40, rect=(5, 5, 20, 30))
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(src), ""))
     QTest.mouseClick(next(b for b in tab.findChildren(type(tab.example_btn))
                           if b.text() == "내 그림…"), Qt.MouseButton.LeftButton)  # fmt: skip
     assert "pin" in tab.theme.images  # 첫 번째 '내 그림…'은 고정 핀
+    # 그림이 30px뿐이라 넣기는 하되 흐려질 수 있다고 알려준다
+    assert [(k, t) for k, t, _ in dialogs] == [("information", "그림이 작아요")]
+    assert "30px" in dialogs[0][2]
     tab.name_edit.setText("내 테마")
     win.accept()
     current = note.themes_dir / "current"
     t = load_theme(current)
     assert t.name == "내 테마" and t.images == {"pin": current / "pin.png"}
     assert note.title_bar.pin_images[0] is not None
+
+
+def test_low_res_notice(win, tmp_path, dialogs):
+    tab = win.theme_tab
+    # 그림 자체는 크지만 여백을 빼면 100px → 안내
+    assert tab.set_image("add", png(tmp_path / "a.png", 400, 400, rect=(0, 0, 100, 60)))
+    assert len(dialogs) == 1 and "100px" in dialogs[0][2]
+    # 여백 빼고 128px 이상이면 조용히
+    assert tab.set_image("todo", png(tmp_path / "b.png", 300, 300, rect=(10, 10, 128, 90)))
+    assert len(dialogs) == 1
+    # 배경은 200px 기준 (여백 안 자름)
+    assert tab.set_image("background", png(tmp_path / "c.png", 150, 120, fill="#ffffff"))
+    assert len(dialogs) == 2 and "150px" in dialogs[1][2]
+    assert tab.set_image("background", png(tmp_path / "d.png", 240, 120, fill="#ffffff"))
+    assert len(dialogs) == 2
+    assert {"add", "todo", "background"} <= tab.theme.images.keys()  # 안내해도 들어가긴 한다
 
 
 def test_tab_bad_image_warns(win, tmp_path, monkeypatch, dialogs):

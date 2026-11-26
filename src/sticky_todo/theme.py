@@ -334,11 +334,37 @@ def tidy_icon(img: QImage, size: int = ICON_PX) -> QImage:
     return out
 
 
-def import_image(src: Path, slot: str, folder: Path) -> Path:
-    """그림을 읽어 정리한 뒤 테마 폴더에 정해진 이름으로 저장한다."""
+LOW_RES_ICON_PX = 128  # 아이콘: 여백을 뺀 그림이 이보다 작으면 키우면서 흐려진다
+LOW_RES_BG_PX = 200  # 배경: 기본 표시 폭
+
+
+def low_res_note(img: QImage, slot: str) -> str:
+    """작아서 흐려질 그림이면 안내 문구, 괜찮으면 빈 문자열 (막지는 않는다)."""
+    if slot in ICON_SLOTS:
+        box = alpha_bounds(img)
+        side = max(box.width(), box.height()) if not box.isEmpty() else 0
+        need = LOW_RES_ICON_PX
+    else:
+        side = max(img.width(), img.height())
+        need = LOW_RES_BG_PX
+    if 0 < side < need:
+        return (
+            f"그림이 작아서 ({side}px) 흐리게 보일 수 있어요.\n"
+            f"가로·세로 {need}px 이상인 그림을 쓰면 또렷해요."
+        )
+    return ""
+
+
+def import_image(src: Path, slot: str, folder: Path, notes: list[str] | None = None) -> Path:
+    """그림을 읽어 정리한 뒤 테마 폴더에 정해진 이름으로 저장한다.
+
+    notes를 주면 작아서 흐려질 그림일 때 안내 문구를 넣어 준다.
+    """
     if slot not in FILES:
         raise ValueError(slot)
     img = read_image(src)
+    if notes is not None and (note := low_res_note(img, slot)):
+        notes.append(note)
     out = tidy_icon(img) if slot in ICON_SLOTS else _fit(img, BG_MAX_PX)
     folder.mkdir(parents=True, exist_ok=True)
     dst = folder / FILES[slot]
