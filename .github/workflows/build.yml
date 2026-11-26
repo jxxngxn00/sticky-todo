@@ -65,6 +65,8 @@ jobs:
         run: uv run python tools/build.py --installer
       - uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
+          # 릴리즈 본문: docs/releases/<태그>.md (태그를 올리기 전에 써 둔다)
+          body_path: docs/releases/${{ github.ref_name }}.md
           files: |
             dist/StickyTodo-Setup.exe
             dist/StickyTodo-Setup.exe.sha256
