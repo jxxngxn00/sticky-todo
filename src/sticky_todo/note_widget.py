@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QFontMetrics,
     QGuiApplication,
     QIcon,
+    QImage,
     QKeyEvent,
     QKeySequence,
     QMouseEvent,
@@ -36,6 +37,7 @@ from PySide6.QtGui import (
     QPainterPath,
     QPalette,
     QPen,
+    QPixmap,
     QShortcut,
 )
 from PySide6.QtWidgets import (
@@ -63,6 +65,7 @@ from .month_view import Cell, MonthCalendar
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
 from .storage import Todo, TodoStore, today_str
+from .theme import Theme, load_theme, max_opacity
 from .updater import RELEASES_PAGE, CheckResult, Status, UpdateChecker
 
 INDENT_PX = 20
@@ -420,6 +423,45 @@ def arrange_rows(todos: list[Todo], done_style: str) -> list[tuple[Todo, bool, b
 # ---------------------------------------------------------------- 체크 버튼
 
 
+def theme_pixmap(path: Path | None) -> QPixmap | None:
+    """테마 그림 (이미 정리된 128px PNG). 없거나 못 읽으면 None → 기본 모양."""
+    if path is None:
+        return None
+    # QPixmap(경로)는 경로로 캐시해서, 같은 이름으로 바꿔 넣은 그림이 예전 그림으로 보일 수 있다
+    img = QImage(str(path))
+    return None if img.isNull() else QPixmap.fromImage(img)
+
+
+def faded_pixmap(pix: QPixmap, opacity: float = 0.55) -> QPixmap:
+    """회색 + 흐리게 (고정 핀이 꺼져 있을 때). 투명한 부분은 그대로."""
+    src = pix.toImage().convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    gray = src.convertToFormat(QImage.Format.Format_Grayscale8).convertToFormat(
+        QImage.Format.Format_ARGB32_Premultiplied
+    )
+    out = QImage(src.size(), QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out)
+    p.drawImage(0, 0, gray)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+    p.drawImage(0, 0, src)  # 원래 그림의 투명도만 남긴다
+    p.end()
+    faded = QImage(src.size(), QImage.Format.Format_ARGB32_Premultiplied)
+    faded.fill(Qt.GlobalColor.transparent)
+    p = QPainter(faded)
+    p.setOpacity(opacity)
+    p.drawImage(0, 0, out)
+    p.end()
+    return QPixmap.fromImage(faded)
+
+
+def draw_icon(p: QPainter, rect: QRectF, pix: QPixmap) -> None:
+    """정사각형 칸에 그림을 꽉 채워 가운데에 (그림은 이미 정사각형으로 정리돼 있음)."""
+    side = min(rect.width(), rect.height())
+    box = QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side)
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.drawPixmap(box, pix, QRectF(pix.rect()))
+
+
 class CheckButton(QAbstractButton):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -430,6 +472,8 @@ class CheckButton(QAbstractButton):
         self.color = QColor("#1C1C1E")  # 글자색 (빈 테두리는 이 색을 옅게)
         self.accent = QColor("#FF9F0A")  # 완료 채움색
         self.ring_alpha = RING_ALPHA  # 빈 테두리 진하기 (배경에 맞춰 ring_alpha()로 정함)
+        # 테마 그림 (안 한 일, 끝낸 일). 있으면 체크 모양 설정보다 먼저
+        self.images: tuple[QPixmap | None, QPixmap | None] = (None, None)
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(22, 22)
@@ -440,6 +484,10 @@ class CheckButton(QAbstractButton):
         side = min(self.width(), self.height()) - 2
         r = QRectF((self.width() - side) / 2, (self.height() - side) / 2, side, side)
         checked = self.isChecked()
+        image = self.images[1 if checked else 0]
+        if image is not None:
+            draw_icon(p, r, image)
+            return
         ring = QColor(self.color)
         ring.setAlphaF(self.ring_alpha)  # 3:1 이상 대비
 
@@ -689,6 +737,7 @@ class TodoRow(QWidget):
         self.check.accent = QColor(style["accent_color"])
         ring_a = ring_alpha(style["text_color"], style["bg_color"])
         self.check.ring_alpha = ring_a
+        self.check.images = (style.get("theme_todo"), style.get("theme_done"))
         self.check.setChecked(todo.done)
         self.check.setFixedSize(22, 22)
         self.check.toggled.connect(lambda on: self.toggled.emit(self.todo.id, on))
@@ -1512,6 +1561,12 @@ class TitleBar(QWidget):
             b.setFixedSize(28, 32)  # 좁은 노트에서도 날짜가 잘리지 않게
             lay.addWidget(b)
         self._colors = ("#1C1C1E", "#FF9F0A", "#FFFFFF")
+        # 테마의 고정 핀 그림 (꺼짐, 켜짐). 켜짐이 없으면 꺼짐 그림을 또렷하게
+        self.pin_images: tuple[QPixmap | None, QPixmap | None] = (None, None)
+        self._paint_icons()
+
+    def set_pin_images(self, off: QPixmap | None, on: QPixmap | None) -> None:
+        self.pin_images = (off, on)
         self._paint_icons()
 
     def set_colors(self, text: str, accent: str, bg: str) -> None:
@@ -1521,10 +1576,17 @@ class TitleBar(QWidget):
     def _paint_icons(self) -> None:
         text, accent, bg = self._colors
         soft = _mix(text, bg, max(0.55, ring_alpha(text, bg)))
-        if self.pin_btn.isChecked():
+        off, on = self.pin_images
+        if off is not None:
+            pinned = self.pin_btn.isChecked()
+            self.pin_btn.setIcon(QIcon((on or off) if pinned else faded_pixmap(off)))
+            self.pin_btn.setIconSize(QSize(22, 22))
+        elif self.pin_btn.isChecked():
             self.pin_btn.setIcon(icons.icon("pin_fill", accent))
+            self.pin_btn.setIconSize(QSize(20, 20))
         else:
             self.pin_btn.setIcon(icons.icon("pin", soft))
+            self.pin_btn.setIconSize(QSize(20, 20))
         self.menu_btn.setIcon(icons.icon("more", soft))
         self.close_btn.setIcon(icons.icon("close", soft))
         self.prev_btn.setIcon(icons.icon("chevron_left", soft))
@@ -1615,6 +1677,11 @@ class TodoInput(QLineEdit):
         self._colors = ("#1C1C1E", "#FF9F0A")
         self.target = ""  # 주간 보기: 추가될 날짜 ('오늘', '11/27 (목)')
         self._lead = self.addAction(QIcon(), QLineEdit.ActionPosition.LeadingPosition)
+        self.theme_icon: QPixmap | None = None  # 테마의 추가 버튼 그림 (하위 단계에서도 같음)
+        self._update_look()
+
+    def set_theme_icon(self, pix: QPixmap | None) -> None:
+        self.theme_icon = pix
         self._update_look()
 
     def set_target(self, target: str) -> None:
@@ -1633,10 +1700,14 @@ class TodoInput(QLineEdit):
         text, accent = self._colors
         self.setTextMargins(visual_indent(self.level) * INDENT_PX, 0, 0, 0)
         if self.level:
-            self._lead.setIcon(icons.icon("subtask", accent))
+            self._lead.setIcon(
+                QIcon(self.theme_icon) if self.theme_icon else icons.icon("subtask", accent)
+            )
             self.setPlaceholderText("하위 할 일")
         else:
-            self._lead.setIcon(icons.icon("add", accent))
+            self._lead.setIcon(
+                QIcon(self.theme_icon) if self.theme_icon else icons.icon("add", accent)
+            )
             self.setPlaceholderText(f"{self.target} 할 일 추가" if self.target else "새로운 할 일")
 
     def _submit(self) -> None:
@@ -1652,6 +1723,111 @@ class TodoInput(QLineEdit):
         if e.type() == QEvent.Type.KeyPress and apply_format_key(self, e):
             return True
         return super().event(e)
+
+
+# ---------------------------------------------------------------- 노트 카드 (테마 배경)
+
+
+class NoteCard(QFrame):
+    """노트 본체. 테마 배경 그림을 목록 뒤에 흐리게 그린다 (둥근 모서리 안쪽만)."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("card")
+        self.bg_image: QPixmap | None = None
+        self.bg_pos = (0.75, 0.8)  # 그림 가운데 (카드 안 비율)
+        self.bg_width = 200  # px
+        self.bg_opacity = 0.4
+        self.radius = 14
+        self.show_bg = True  # 넓은 보드에서는 숨긴다
+        self._scaled: tuple[tuple, QPixmap] | None = None
+
+    def bg_rect(self) -> QRectF:
+        pix = self.bg_image
+        if pix is None or pix.width() == 0:
+            return QRectF()
+        w = float(self.bg_width)
+        h = w * pix.height() / pix.width()
+        cx, cy = self.bg_pos[0] * self.width(), self.bg_pos[1] * self.height()
+        return QRectF(cx - w / 2, cy - h / 2, w, h)
+
+    def _pixmap(self, rect: QRectF) -> QPixmap:
+        dpr = self.devicePixelRatioF()
+        key = (round(rect.width() * dpr), round(rect.height() * dpr), self.bg_image.cacheKey())
+        if self._scaled is None or self._scaled[0] != key:
+            pix = self.bg_image.scaled(
+                key[0],
+                key[1],
+                Qt.AspectRatioMode.IgnoreAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+            pix.setDevicePixelRatio(dpr)
+            self._scaled = (key, pix)
+        return self._scaled[1]
+
+    def paintEvent(self, e) -> None:  # noqa: N802
+        super().paintEvent(e)
+        if self.bg_image is None or not self.show_bg or self.bg_opacity <= 0:
+            return
+        rect = self.bg_rect()
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        clip = QPainterPath()
+        clip.addRoundedRect(QRectF(self.rect()), self.radius, self.radius)
+        p.setClipPath(clip)
+        p.setOpacity(self.bg_opacity)
+        p.drawPixmap(rect.topLeft(), self._pixmap(rect))
+
+
+class BgDragOverlay(QWidget):
+    """설정 창에서 '노트에서 끌어서 옮기기'를 켰을 때 카드 위에 덮는 판. 끌면 배경이 따라온다."""
+
+    def __init__(self, card: NoteCard, moved: Callable[[float, float], None]) -> None:
+        super().__init__(card)
+        self.card = card
+        self.moved = moved
+        self.setCursor(Qt.CursorShape.SizeAllCursor)
+        self.setGeometry(card.rect())
+        self.raise_()
+
+    def _move_to(self, pos: QPoint) -> None:
+        w, h = max(self.width(), 1), max(self.height(), 1)
+        x = min(1.0, max(0.0, pos.x() / w))
+        y = min(1.0, max(0.0, pos.y() / h))
+        self.card.bg_pos = (x, y)
+        self.card.update()
+        self.update()
+        self.moved(x, y)
+
+    def mousePressEvent(self, e: QMouseEvent) -> None:  # noqa: N802
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._move_to(e.position().toPoint())
+
+    def mouseMoveEvent(self, e: QMouseEvent) -> None:  # noqa: N802
+        if e.buttons() & Qt.MouseButton.LeftButton:
+            self._move_to(e.position().toPoint())
+
+    def paintEvent(self, _event) -> None:  # noqa: N802
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.fillRect(self.rect(), QColor(255, 159, 10, 18))
+        rect = self.card.bg_rect()
+        if not rect.isEmpty():
+            pen = QPen(QColor("#FF9F0A"), 2, Qt.PenStyle.DashLine)
+            p.setPen(pen)
+            p.drawRoundedRect(rect.adjusted(-4, -4, 4, 4), 6, 6)
+        p.setPen(QColor("#FFFFFF"))
+        f = p.font()
+        f.setBold(True)
+        p.setFont(f)
+        text = "끌어서 배경 옮기기"
+        tw = p.fontMetrics().horizontalAdvance(text) + 20
+        pill = QRectF((self.width() - tw) / 2, 10, tw, p.fontMetrics().height() + 8)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QColor(31, 29, 26, 220))
+        p.drawRoundedRect(pill, pill.height() / 2, pill.height() / 2)
+        p.setPen(QColor("#FFFFFF"))
+        p.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
 
 
 # ---------------------------------------------------------------- 노트 창
@@ -1679,6 +1855,9 @@ class NoteWidget(QWidget):
         self._quitting = False
         self.settings = settings
         self.settings_path = Path(settings_path)
+        self.theme = load_theme(self.themes_dir / "current")
+        self._theme_pix: dict[str, QPixmap | None] = {}
+        self._bg_overlay: BgDragOverlay | None = None
         self.setWindowTitle("Sticky Todo")
         # 최소 크기는 고정값 대신 레이아웃이 정한다: 보기(일·주·월)·배너·글자 크기에 따라
         # 제목·버튼·달력·입력칸이 눌려서 글자가 겹치기 직전까지만 줄어든다.
@@ -1701,8 +1880,7 @@ class NoteWidget(QWidget):
 
         outer = QVBoxLayout(self)
         self._outer = outer
-        self.card = QFrame(self)
-        self.card.setObjectName("card")
+        self.card = NoteCard(self)
         outer.addWidget(self.card)
 
         card_lay = QVBoxLayout(self.card)
@@ -1888,6 +2066,7 @@ class NoteWidget(QWidget):
         s = self.settings
         pal = self.note_palette()
         spacing = {"compact": 1, "normal": 4, "relaxed": 8}[s["line_spacing"]]
+        self._load_theme_images()
         self.list_view.style_opts = {
             "row_pad": spacing,
             "check_style": s["check_style"],
@@ -1895,12 +2074,68 @@ class NoteWidget(QWidget):
             "text_color": pal["text"],
             "bg_color": pal["solid"],
             "accent_color": pal["accent"],
+            "theme_todo": self._theme_pix.get("todo"),
+            "theme_done": self._theme_pix.get("done"),
         }
         self._update_title_visibility()
         if self._manager_win is not None:
             self._manager_win.apply_style()  # 강조색을 관리 창에도
         self.sync_hotkey()
         self._on_store_changed()
+
+    # ------------------------------------------------------------ 테마
+
+    @property
+    def themes_dir(self) -> Path:
+        """데이터 폴더/themes (설정 파일과 같은 폴더 아래, portable 모드도 같이 다님)."""
+        return self.settings_path.parent / "themes"
+
+    def set_theme(self, theme: Theme, *, rebuild: bool = True) -> None:
+        """테마를 바꾸고 바로 다시 그린다 (설정 창 미리보기·확인·취소가 쓴다).
+
+        rebuild=False: 배경·오늘 표시처럼 목록과 상관없는 값만 바뀌었을 때 (슬라이더를 끄는 중).
+        """
+        self.theme = theme
+        if rebuild:
+            self.apply_settings()
+        else:
+            self._load_theme_images()
+
+    def _load_theme_images(self) -> None:
+        t = self.theme
+        pix = {
+            slot: theme_pixmap(t.image(slot))
+            for slot in ("pin", "pin_on", "todo", "done", "add", "today", "background")
+        }
+        self._theme_pix = pix
+        self.title_bar.set_pin_images(pix["pin"], pix["pin_on"])
+        self.input.set_theme_icon(pix["add"])
+        self.calendar.today_image = pix["today"]
+        self.calendar.today_offset = t.today_offset
+        self.calendar.today_number = t.today_number
+        self.calendar.update()
+        card = self.card
+        card.bg_image = pix["background"]
+        card.bg_pos = (t.background.x, t.background.y)
+        card.bg_width = t.background.width
+        cap = 100
+        if pix["background"] is not None:
+            cap = max_opacity(
+                pix["background"].toImage(), self.settings["bg_color"], self.settings["text_color"]
+            )
+        self.bg_opacity_cap = cap
+        card.bg_opacity = min(t.background.opacity, cap) / 100
+        card.radius = self.settings["corner_radius"]
+        card.update()
+
+    def set_bg_drag(self, moved: Callable[[float, float], None] | None) -> None:
+        """설정 창의 '노트에서 끌어서 옮기기'. moved가 None이면 끝낸다."""
+        if self._bg_overlay is not None:
+            self._bg_overlay.deleteLater()
+            self._bg_overlay = None
+        if moved is not None:
+            self._bg_overlay = BgDragOverlay(self.card, moved)
+            self._bg_overlay.show()
 
     def _apply_style(self) -> None:
         s = self.settings
@@ -2091,6 +2326,8 @@ class NoteWidget(QWidget):
     def _on_store_changed(self) -> None:
         day = self.store.current_day
         board = self.board_active
+        self.card.show_bg = not board  # 넓은 보드에서는 배경 그림을 숨긴다
+        self.card.update()
         self.title_bar.set_holiday(holiday(day) if self.view_mode == "day" else None)
         self.board.setVisible(board)
         self.list_view.setVisible(not board)
@@ -2669,6 +2906,8 @@ class NoteWidget(QWidget):
             self._apply_month_list()  # 낮아지면 달력만
 
     def eventFilter(self, obj, e) -> bool:  # noqa: N802
+        if obj is self.card and e.type() == QEvent.Type.Resize and self._bg_overlay is not None:
+            self._bg_overlay.setGeometry(self.card.rect())
         if obj is self.card and e.type() == QEvent.Type.Resize:
             self.grip.move(
                 self.card.width() - self.grip.width(), self.card.height() - self.grip.height()

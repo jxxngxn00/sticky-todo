@@ -10,13 +10,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QToolTip, QWidget
 
 WEEK_HEADER = "일월화수목금토"
 MAX_DOTS = 3
 DOT = 5.0
 GAP = 5.0  # 숫자와 점 사이
+TODAY_BASE = 28.0  # 테마 오늘 표시 위치 조정값의 기준 칸 크기 (설정 창 미리보기와 같은 단위)
 
 
 def _draw_centered(p: QPainter, rect: QRectF, text: str) -> None:
@@ -64,6 +65,10 @@ class MonthCalendar(QWidget):
             "sunday": QColor("#B3261E"),
             "done_dot": QColor("#8E8E90"),
         }
+        # 테마의 '오늘 표시' 그림 (없으면 강조색 동그라미)
+        self.today_image: QPixmap | None = None
+        self.today_offset: tuple[float, float] = (0.0, 0.0)  # 오늘 칸 28px 기준 px
+        self.today_number = True
         self._press: int | None = None
         self._drop: int | None = None  # 끌어다 놓을 칸
         self.setAcceptDrops(True)
@@ -154,7 +159,17 @@ class MonthCalendar(QWidget):
             # 숫자(24) + 간격(GAP) + 점(DOT) 묶음을 칸 세로 가운데에
             top = r.center().y() - (self.num + GAP + DOT) / 2
             num_rect = QRectF(r.center().x() - self.num / 2, top, self.num, self.num)
-            if cell.today:
+            if cell.today and self.today_image is not None:
+                # 테마 그림: 숫자 칸보다 조금 크게, 맞춘 만큼 옮겨서 (숫자는 칸 가운데 그대로)
+                k = self.num / TODAY_BASE
+                box = num_rect.adjusted(-4 * k, -4 * k, 4 * k, 4 * k)
+                dx, dy = self.today_offset
+                box.translate(dx * k, dy * k)
+                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                p.drawPixmap(box, self.today_image, QRectF(self.today_image.rect()))
+                p.setPen(c["text"] if self.today_number else Qt.GlobalColor.transparent)
+                p.setFont(bold)
+            elif cell.today:
                 p.setPen(Qt.PenStyle.NoPen)
                 p.setBrush(c["accent"])
                 p.drawEllipse(num_rect)

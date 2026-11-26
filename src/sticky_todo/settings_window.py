@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from .note_widget import resolve_font_family
 from .settings import APPEARANCE_KEYS, LIST_KEYS, PRESETS
+from .theme_tab import ThemeTab
 
 if TYPE_CHECKING:
     from .note_widget import NoteWidget
@@ -135,6 +136,8 @@ class SettingsWindow(QDialog):
         tabs = QTabWidget(self)
         tabs.addTab(self._build_look_tab(), "외형")
         tabs.addTab(self._build_list_tab(), "목록 동작")
+        self.theme_tab = ThemeTab(note)
+        tabs.addTab(self.theme_tab, "테마")
 
         self.reset_btn = QPushButton("기본값으로")
         self.reset_btn.clicked.connect(self.reset_defaults)
@@ -357,9 +360,10 @@ class SettingsWindow(QDialog):
 
     def accept(self) -> None:
         self.note.save_settings()
+        self.theme_tab.commit()
         super().accept()
 
     def reject(self) -> None:
         self.settings.restore(self._snapshot)
-        self.note.apply_settings()
+        self.theme_tab.rollback()  # 원래 테마로 (apply_settings도 함께)
         super().reject()

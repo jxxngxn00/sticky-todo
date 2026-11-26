@@ -1,0 +1,28 @@
+{
+  "format": 1,
+  "name": "귤 친구",
+  "pin": {
+    "off": "pin.png",
+    "on": "pin-on.png"
+  },
+  "check": {
+    "todo": "todo.png",
+    "done": "done.png"
+  },
+  "add": "add.png",
+  "today": {
+    "image": "today.png",
+    "show_number": true,
+    "icon_offset": [
+      0.0,
+      0.0
+    ]
+  },
+  "background": {
+    "image": "background.png",
+    "x": 0.72,
+    "y": 0.8,
+    "width": 200,
+    "opacity": 40
+  }
+}

@@ -72,6 +72,9 @@ def run_pyinstaller(icon: Path) -> Path:
         # 같이 넣는 글꼴(Pretendard)과 라이선스
         "--add-data", f"{ROOT / 'src' / 'sticky_todo' / 'fonts'}{os.pathsep}sticky_todo/fonts",
         "--add-data", f"{ROOT / 'licenses'}{os.pathsep}licenses",
+        # 예시 테마 '귤 친구' (직접 그린 그림)
+        "--add-data",
+        f"{ROOT / 'src' / 'sticky_todo' / 'example_theme'}{os.pathsep}sticky_todo/example_theme",
         str(ROOT / "packaging" / "entry.py"),
     ]  # fmt: skip
     subprocess.run(cmd, check=True, cwd=ROOT)
