@@ -35,6 +35,7 @@ from sticky_todo.help_window import HelpWindow  # noqa: E402
 from sticky_todo.note_widget import NoteWidget, week_days  # noqa: E402
 from sticky_todo.settings import Settings  # noqa: E402
 from sticky_todo.storage import TodoStore, today_str  # noqa: E402
+from sticky_todo.theme import load_example, load_theme  # noqa: E402
 
 # 시안과 같은 예시 할 일: 요일(일=0) → [(내용, 완료, 들여쓰기)]
 SAMPLE: dict[int, list[tuple[str, bool, int]]] = {
@@ -138,7 +139,12 @@ def side_by_side(images: list[QImage], gap: int = 0) -> QImage:
     return out
 
 
+ONLY: set[str] = set()  # 명령줄에 이름을 주면 그 사진만 새로 저장 (예: theme.png)
+
+
 def save(img: QImage, name: str) -> None:
+    if ONLY and name not in ONLY:
+        return
     OUT.mkdir(parents=True, exist_ok=True)
     path = OUT / name
     img.save(str(path), "PNG", 0)  # 0 = 가장 많이 압축
@@ -147,6 +153,7 @@ def save(img: QImage, name: str) -> None:
 
 
 def main() -> int:
+    ONLY.update(sys.argv[1:])
     resources.load_bundled_fonts()
     tmp = Path(tempfile.mkdtemp())
     save(icons.app_pixmap(96).toImage(), "icon.png")  # README 제목 옆 아이콘
@@ -174,6 +181,16 @@ def main() -> int:
         w._settings_timer.stop()
         w.hide()
     save(side_by_side(presets), "presets.png")
+
+    # 테마: 예시 테마(귤 친구)를 씌운 하루 보기 + 월간 보기
+    themed = note(store, tmp, "ios")
+    load_example(themed.themes_dir / "current")
+    themed.set_theme(load_theme(themed.themes_dir / "current"))
+    theme_day = shot(themed, "day", (300, 460))
+    theme_month = shot(themed, "month", (360, 460), month_list=False)
+    save(side_by_side([theme_day, theme_month]), "theme.png")
+    themed._settings_timer.stop()
+    themed.hide()
 
     # 도움말: 단축키 탭 (저장 위치가 나오는 탭은 찍지 않음)
     help_win = HelpWindow(tmp, yellow)

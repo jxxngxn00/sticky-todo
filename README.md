@@ -145,6 +145,8 @@ Get-FileHash .\StickyTodo-Setup.exe -Algorithm SHA256
 
 ☰ → 설정 → **테마** 탭에서 노트의 아이콘과 배경을 내 그림으로 바꿀 수 있어요. 글꼴과 색은 그대로예요.
 
+<p align="center"><img src="docs/images/theme.png" width="560" alt="예시 테마 '귤 친구'를 씌운 하루 보기와 월간 보기"></p>
+
 | 바꿀 수 있는 곳 | |
 |---|---|
 | 고정 핀 버튼 | 꺼져 있으면 흐린 회색, 고정하면 또렷하게. '고정됐을 때 그림'을 따로 넣어도 돼요 |

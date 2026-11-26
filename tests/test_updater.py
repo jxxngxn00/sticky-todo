@@ -5,7 +5,6 @@ import json
 import pytest
 from PySide6.QtWidgets import QMessageBox
 
-from sticky_todo import updater
 from sticky_todo.note_widget import NoteWidget
 from sticky_todo.settings import Settings
 from sticky_todo.tray import Tray
@@ -285,7 +284,7 @@ def test_manual_check_dialogs(note, opened):
     go.click()
     assert opened == [PAGE]
 
-    fetch.data = body(tag=f"v{updater.__version__}")
+    fetch.data = body(tag="v0.2.0")  # make_checker의 현재 버전과 같음 → 최신
     note.check_updates_now()
     assert "최신 버전" in note.update_box.text()
     fetch.data = None
