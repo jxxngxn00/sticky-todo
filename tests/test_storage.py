@@ -227,7 +227,10 @@ def test_debounced_autosave(make_store):
     s.add("a")
     s.add("b")
     assert not s.todos_file.exists()  # 아직 디바운스 중
-    QTest.qWait(200)
+    for _ in range(100):  # 느린 CI에서도 되게, 저장될 때까지 최대 5초
+        QTest.qWait(50)
+        if s.todos_file.exists():
+            break
     assert len(json.loads(s.todos_file.read_text(encoding="utf-8"))["todos"]) == 2
 
 

@@ -43,6 +43,15 @@ def png(path, w, h, fill=None, rect=None, color="#FF8800"):
     return path
 
 
+def same_picture(a, b, tol=2):
+    """눈으로 같은 그림인지. 반투명 픽셀의 반올림은 CPU마다 조금 달라서 미리 곱한 값으로 비교."""
+    if a.size() != b.size():
+        return False
+    fmt = QImage.Format.Format_ARGB32_Premultiplied
+    x, y = bytes(a.convertToFormat(fmt).constBits()), bytes(b.convertToFormat(fmt).constBits())
+    return max((abs(p - q) for p, q in zip(x, y, strict=True)), default=0) <= tol
+
+
 def center_of(rect):
     return (rect.x() + (rect.width() - 1) / 2, rect.y() + (rect.height() - 1) / 2)
 
@@ -426,7 +435,7 @@ def test_export_import_roundtrip(qapp, tmp_path):
     assert back.today_offset == (1.5, -1.0) and back.background == t.background
     for slot, path in back.images.items():
         assert path.parent == tmp_path / "draft"
-        assert QImage(str(path)) == QImage(str(t.images[slot]))  # 다시 정리해도 같은 그림
+        assert same_picture(QImage(str(path)), QImage(str(t.images[slot])))  # 다시 정리해도
     assert not (tmp_path / "draft.import").exists() and not (tmp_path / "draft.raw").exists()
 
 
