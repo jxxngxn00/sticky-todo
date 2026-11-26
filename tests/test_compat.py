@@ -1,4 +1,4 @@
-"""v0.2.0이 실제로 저장한 파일(tests/data/v0_2_0)을 지금 버전이 그대로 여는지.
+"""v0.2.0이 실제로 저장한 파일(tests/fixtures/v0_2_0)을 지금 버전이 그대로 여는지.
 
 데이터는 v0.2.0 태그의 코드로 만들었다 (할 일·하위 할 일·완료·보관·다른 달, 분홍 프리셋 설정).
 """
@@ -12,7 +12,7 @@ from sticky_todo.note_widget import NoteWidget
 from sticky_todo.settings import Settings
 from sticky_todo.storage import LoadStatus, TodoStore
 
-DATA = Path(__file__).parent / "data" / "v0_2_0"
+DATA = Path(__file__).parent / "fixtures" / "v0_2_0"
 
 
 @pytest.fixture
