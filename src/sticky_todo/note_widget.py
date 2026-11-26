@@ -8,10 +8,21 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QMimeData, QPoint, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEvent,
+    QMimeData,
+    QPoint,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    QUrl,
+    Signal,
+)
 from PySide6.QtGui import (
     QColor,
     QCursor,
+    QDesktopServices,
     QDrag,
     QFont,
     QFontDatabase,
@@ -51,6 +62,7 @@ from .month_view import Cell, MonthCalendar
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
 from .storage import Todo, TodoStore, today_str
+from .updater import RELEASES_PAGE, CheckResult, Status, UpdateChecker
 
 INDENT_PX = 20
 MIME_TODO = "application/x-sticky-todo-id"
@@ -1473,6 +1485,8 @@ class NoteWidget(QWidget):
         self.store = store
         self.autostart = autostart
         self.hotkey = None  # main에서 GlobalHotkey를 붙인다
+        self.updater = None  # main에서 attach_updater로 UpdateChecker를 붙인다
+        self.update_box: QMessageBox | None = None  # '업데이트 확인' 결과 창
         self.hide_to_tray = False  # 트레이가 있으면 ✕는 숨기기
         self._quitting = False
         self.settings = settings
@@ -2127,6 +2141,10 @@ class NoteWidget(QWidget):
 
     def build_menu(self) -> QMenu:
         menu = QMenu(self)
+        latest = self.updater.latest if self.updater is not None else None
+        if latest is not None:
+            menu.addAction(f"새 버전 {latest.version} 받기", self.open_release_page)
+            menu.addSeparator()
         undo = menu.addAction("방금 지운 것 되돌리기\tCtrl+Z", self.undo_delete)
         undo.setEnabled(self.store.can_undo())
         menu.addSeparator()
@@ -2147,6 +2165,8 @@ class NoteWidget(QWidget):
         menu.addAction("설정…", self.open_settings_window)
         help_act = menu.addAction("도움말 · 단축키", self.open_help_window)
         help_act.setShortcut(QKeySequence("F1"))
+        if self.updater is not None:
+            menu.addAction("업데이트 확인", self.check_updates_now)
         auto = menu.addAction("시작 시 자동 실행")
         auto.setCheckable(True)
         auto.setEnabled(self.autostart is not None)
@@ -2178,6 +2198,51 @@ class NoteWidget(QWidget):
 
     def _forget_help_window(self) -> None:
         self._help_win = None
+
+    # ------------------------------------------------------------ 새 버전 알림
+
+    def attach_updater(self, updater: UpdateChecker) -> None:
+        self.updater = updater
+        updater.manual_result.connect(self._show_update_result)
+
+    def check_updates_now(self) -> None:
+        if self.updater is not None:
+            self.updater.check_now()
+
+    def open_release_page(self) -> None:
+        latest = self.updater.latest if self.updater is not None else None
+        # 주소는 updater가 이 저장소의 릴리즈 페이지인지 확인한 것만 들어온다
+        QDesktopServices.openUrl(QUrl(latest.url if latest is not None else RELEASES_PAGE))
+
+    def _show_update_result(self, result: CheckResult) -> None:
+        if self.update_box is not None:
+            self.update_box.close()
+        box = QMessageBox(self)
+        box.setWindowTitle("업데이트 확인")
+        box.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+        current = self.updater.current if self.updater is not None else ""
+        if result.status is Status.NEWER and result.release is not None:
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setText(f"새 버전이 나왔어요. ({current} → {result.release.version})")
+            box.setInformativeText("릴리즈 페이지에서 받아 설치하면 돼요.")
+            go = box.addButton("받으러 가기", QMessageBox.ButtonRole.AcceptRole)
+            box.addButton("나중에", QMessageBox.ButtonRole.RejectRole)
+            go.clicked.connect(self.open_release_page)
+        elif result.status is Status.LATEST:
+            box.setIcon(QMessageBox.Icon.Information)
+            box.setText(f"최신 버전을 쓰고 있어요. ({current})")
+            box.addButton("확인", QMessageBox.ButtonRole.AcceptRole)
+        else:
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setText("새 버전을 확인하지 못했어요.")
+            box.setInformativeText("인터넷 연결을 확인하고 잠시 뒤에 다시 해 보세요.")
+            box.addButton("확인", QMessageBox.ButtonRole.AcceptRole)
+        box.destroyed.connect(self._forget_update_box)
+        self.update_box = box
+        box.open()
+
+    def _forget_update_box(self) -> None:
+        self.update_box = None
 
     def open_manager_window(self) -> None:
         from .manager_window import ManagerWindow

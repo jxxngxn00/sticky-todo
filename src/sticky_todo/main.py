@@ -17,6 +17,7 @@ from .paths import resolve_paths
 from .settings import Settings
 from .storage import LoadStatus, TodoStore, UnsupportedVersionError
 from .tray import Tray
+from .updater import UpdateChecker
 
 _previous_handler = None
 
@@ -84,6 +85,14 @@ def main() -> int:
         tray = Tray(note)
         tray.show()
         note.hide_to_tray = True  # ✕는 트레이로 숨기기
+
+    # 새 버전 알림: 하루 한 번 GitHub에 최신 버전 번호만 물어본다 (설정에서 끌 수 있음)
+    updater = UpdateChecker(settings, note.schedule_settings_save, parent=app)
+    note.attach_updater(updater)
+    if tray is not None:
+        updater.found.connect(tray.notify_update)
+    app.aboutToQuit.connect(updater.stop)
+    updater.start()
     note.show()
     note.sync_hotkey()
 

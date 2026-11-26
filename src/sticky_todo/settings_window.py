@@ -277,6 +277,12 @@ class SettingsWindow(QDialog):
         self.hotkey_check = QCheckBox("Ctrl+Alt+T로 어디서든 노트 불러오기")
         self.hotkey_check.toggled.connect(lambda on: self.change("global_hotkey", on))
         form.addRow("단축키", self.hotkey_check)
+        self.update_check = QCheckBox("새 버전이 나오면 알려주기")
+        self.update_check.setToolTip(
+            "하루 한 번 GitHub에 최신 버전 번호만 물어봐요. 할 일 내용은 보내지 않아요."
+        )
+        self.update_check.toggled.connect(lambda on: self.change("update_check", on))
+        form.addRow("업데이트", self.update_check)
         return page
 
     # ------------------------------------------------------------ 값 ↔ 화면
@@ -307,6 +313,8 @@ class SettingsWindow(QDialog):
             self.auto_archive_check.setChecked(s["auto_archive"])
         with QSignalBlocker(self.hotkey_check):
             self.hotkey_check.setChecked(s["global_hotkey"])
+        with QSignalBlocker(self.update_check):
+            self.update_check.setChecked(s["update_check"])
         for key, cb in self.color_buttons.items():
             cb.set_color(s[key])
         self._sync_visibility()

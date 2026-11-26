@@ -86,6 +86,11 @@ def _bool(v: Any) -> bool:
     return isinstance(v, bool)
 
 
+def _short_str(max_len: int) -> Callable[[Any], bool]:
+    """빈 문자열도 되는 짧은 글자."""
+    return lambda v: isinstance(v, str) and len(v) <= max_len
+
+
 _yellow = PRESETS["yellow"]
 
 SCHEMA: dict[str, Field] = {
@@ -105,6 +110,10 @@ SCHEMA: dict[str, Field] = {
     "line_spacing": Field("normal", _choice("compact", "normal", "relaxed")),
     "auto_archive": Field(True, _bool),  # 날짜가 바뀌면 지난 날 완료한 항목 보관
     "global_hotkey": Field(True, _bool),  # Ctrl+Alt+T로 어디서든 노트 불러오기
+    # 새 버전 알림 (하루 한 번 GitHub에 최신 버전 번호만 물어봄)
+    "update_check": Field(True, _bool),
+    "update_last_check": Field(0, _int_range(0, 10**11)),  # 마지막으로 확인한 시각 (초)
+    "update_notified": Field("", _short_str(20)),  # 풍선 알림을 띄운 버전 (한 번만)
     # 처음 한 번만 보여주는 안내
     "tray_hint_seen": Field(False, _bool),
     "archive_hint_seen": Field(False, _bool),
