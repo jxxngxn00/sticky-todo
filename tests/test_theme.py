@@ -534,3 +534,30 @@ def test_drop_theme_file_on_note(note, tmp_path, dialogs):
     e2.ignore()
     QApplication.sendEvent(note, e2)
     assert not e2.isAccepted()
+
+
+def test_small_icons_drawn_smooth():
+    """128px 그림을 작은 칸에 그릴 때 곱게 줄인 결과와 같아야 (계단처럼 깨지지 않게)."""
+    from PySide6.QtCore import QRectF
+
+    from sticky_todo.theme import EXAMPLE_DIR, draw_smooth
+
+    pix = QPixmap.fromImage(QImage(str(EXAMPLE_DIR / "done.png")))
+    for side in (16, 18, 24):
+        want = pix.scaled(
+            side,
+            side,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ).toImage()
+        got = QImage(side, side, QImage.Format.Format_ARGB32_Premultiplied)
+        got.fill(Qt.GlobalColor.transparent)
+        p = QPainter(got)
+        draw_smooth(p, QRectF(0, 0, side, side), pix)
+        p.end()
+        diff = max(
+            abs(QColor(got.pixel(x, y)).red() - QColor(want.pixel(x, y)).red())
+            for y in range(side)
+            for x in range(side)
+        )
+        assert diff <= 2, side

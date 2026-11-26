@@ -18,8 +18,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QColor, QImage, QImageReader, QPainter
+from PySide6.QtCore import QRect, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPixmap
 
 from .fileio import atomic_write_text
 
@@ -283,6 +283,35 @@ def alpha_bounds(img: QImage, threshold: int = 8) -> QRect:
     left = mask.index(1)
     right = w - 1 - mask[::-1].index(1)
     return QRect(left, top, right - left + 1, bottom - top + 1)
+
+
+_SCALED: dict[tuple[int, int], QPixmap] = {}
+
+
+def draw_smooth(p: QPainter, box: QRectF, pix: QPixmap) -> None:
+    """작게 그릴 때 계단처럼 깨지지 않게, 화면 픽셀 크기로 미리 곱게 줄여서 그린다.
+
+    QPainter가 128px 그림을 바로 20px 칸에 그리면 이웃 4점만 섞어서 테두리가 깨진다.
+    QImage 축소(SmoothTransformation)는 영역을 평균내서 부드럽다.
+    """
+    dpr = p.device().devicePixelRatioF() if p.device() else 1.0
+    side = max(1, round(max(box.width(), box.height()) * dpr))
+    key = (pix.cacheKey(), side)
+    small = _SCALED.get(key)
+    if small is None:
+        if len(_SCALED) > 64:
+            _SCALED.clear()
+        small = pix.scaled(
+            side,
+            side,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        _SCALED[key] = small
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+    p.drawPixmap(box, small, QRectF(small.rect()))
+    p.restore()
 
 
 def tidy_icon(img: QImage, size: int = ICON_PX) -> QImage:

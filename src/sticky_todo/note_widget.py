@@ -65,7 +65,7 @@ from .month_view import Cell, MonthCalendar
 from .paths import default_export_dir
 from .settings import PRESETS, Settings
 from .storage import Todo, TodoStore, today_str
-from .theme import Theme, load_theme, max_opacity
+from .theme import Theme, draw_smooth, load_theme, max_opacity
 from .updater import RELEASES_PAGE, CheckResult, Status, UpdateChecker
 
 INDENT_PX = 20
@@ -458,8 +458,7 @@ def draw_icon(p: QPainter, rect: QRectF, pix: QPixmap) -> None:
     """정사각형 칸에 그림을 꽉 채워 가운데에 (그림은 이미 정사각형으로 정리돼 있음)."""
     side = min(rect.width(), rect.height())
     box = QRectF(rect.center().x() - side / 2, rect.center().y() - side / 2, side, side)
-    p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-    p.drawPixmap(box, pix, QRectF(pix.rect()))
+    draw_smooth(p, box, pix)
 
 
 class CheckButton(QAbstractButton):

@@ -13,6 +13,8 @@ from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QToolTip, QWidget
 
+from .theme import draw_smooth
+
 WEEK_HEADER = "일월화수목금토"
 MAX_DOTS = 3
 DOT = 5.0
@@ -165,8 +167,7 @@ class MonthCalendar(QWidget):
                 box = num_rect.adjusted(-4 * k, -4 * k, 4 * k, 4 * k)
                 dx, dy = self.today_offset
                 box.translate(dx * k, dy * k)
-                p.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-                p.drawPixmap(box, self.today_image, QRectF(self.today_image.rect()))
+                draw_smooth(p, box, self.today_image)
                 p.setPen(c["text"] if self.today_number else Qt.GlobalColor.transparent)
                 p.setFont(bold)
             elif cell.today:
