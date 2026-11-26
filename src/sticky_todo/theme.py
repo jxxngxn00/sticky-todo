@@ -247,7 +247,9 @@ def read_image(path: Path) -> QImage:
     img = reader.read()
     if img.isNull():
         raise ThemeImageError("그림을 읽을 수 없어요.")
-    return img.convertToFormat(QImage.Format.Format_ARGB32_Premultiplied)
+    # 미리 곱한 형식으로 바꾸지 않는다: 크기를 안 바꾸는 그림(배경)이 저장될 때 그대로 남게
+    # (곱했다 푸는 변환은 반투명 픽셀에서 손실이 있고, 그 정도가 CPU마다 다르다)
+    return img.convertToFormat(QImage.Format.Format_ARGB32)
 
 
 def _fit(img: QImage, longest: int) -> QImage:

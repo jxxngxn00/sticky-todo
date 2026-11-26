@@ -43,13 +43,13 @@ def png(path, w, h, fill=None, rect=None, color="#FF8800"):
     return path
 
 
-def same_picture(a, b, tol=2):
-    """눈으로 같은 그림인지. 반투명 픽셀의 반올림은 CPU마다 조금 달라서 미리 곱한 값으로 비교."""
-    if a.size() != b.size():
-        return False
+def picture_diff(a, b):
+    """두 그림 차이 (미리 곱한 값 기준): (가장 큰 차이, 2보다 크게 다른 바이트 수)."""
+    assert a.size() == b.size(), (a.size(), b.size())
     fmt = QImage.Format.Format_ARGB32_Premultiplied
     x, y = bytes(a.convertToFormat(fmt).constBits()), bytes(b.convertToFormat(fmt).constBits())
-    return max((abs(p - q) for p, q in zip(x, y, strict=True)), default=0) <= tol
+    d = [abs(p - q) for p, q in zip(x, y, strict=True)]
+    return max(d, default=0), sum(v > 2 for v in d)
 
 
 def center_of(rect):
@@ -435,7 +435,9 @@ def test_export_import_roundtrip(qapp, tmp_path):
     assert back.today_offset == (1.5, -1.0) and back.background == t.background
     for slot, path in back.images.items():
         assert path.parent == tmp_path / "draft"
-        assert same_picture(QImage(str(path)), QImage(str(t.images[slot])))  # 다시 정리해도
+        # 다시 정리해도 같은 그림. 아이콘은 다시 그리면서 반올림이 CPU마다 조금 다를 수 있다
+        diff = picture_diff(QImage(str(path)), QImage(str(t.images[slot])))
+        assert diff[0] <= (0 if slot == "background" else 2), (slot, diff)
     assert not (tmp_path / "draft.import").exists() and not (tmp_path / "draft.raw").exists()
 
 
